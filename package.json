@@ -1,0 +1,14 @@
+{
+  "name": "plant-attendance-app",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build-site.js",
+    "start": "node server.js",
+    "import:data": "node scripts/import-json-to-postgres.js",
+    "check": "node --check app.js && node --check server.js && node --check api/state.js && node --check api/backup.js && node --check scripts/import-json-to-postgres.js"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  }
+}
