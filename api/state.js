@@ -11,7 +11,8 @@ const DEFAULT_STATE = {
   attendance: [],
   users: [],
   deletedAttendanceIds: [],
-  deletedUserIds: []
+  deletedUserIds: [],
+  deletedOperatorIds: []
 };
 
 module.exports = async function handler(req, res) {
@@ -79,7 +80,8 @@ function normalizeState(state = {}) {
     attendance: Array.isArray(state.attendance) ? state.attendance : [],
     users: Array.isArray(state.users) ? state.users : DEFAULT_STATE.users,
     deletedAttendanceIds: Array.isArray(state.deletedAttendanceIds) ? state.deletedAttendanceIds : [],
-    deletedUserIds: Array.isArray(state.deletedUserIds) ? state.deletedUserIds : []
+    deletedUserIds: Array.isArray(state.deletedUserIds) ? state.deletedUserIds : [],
+    deletedOperatorIds: Array.isArray(state.deletedOperatorIds) ? state.deletedOperatorIds : []
   };
 }
 
@@ -92,8 +94,16 @@ function mergeState(existing, incoming) {
     ...existing.deletedUserIds,
     ...incoming.deletedUserIds
   ]);
+  const deletedOperatorIds = new Set([
+    ...existing.deletedOperatorIds,
+    ...incoming.deletedOperatorIds
+  ].map((id) => String(id).toLowerCase()));
 
-  const operators = upsertBy(existing.operators, incoming.operators, (item) => item.code);
+  incoming.operators.forEach((operator) => {
+    if (operator.code) deletedOperatorIds.delete(String(operator.code).toLowerCase());
+  });
+  const operators = upsertBy(existing.operators, incoming.operators, (item) => item.code)
+    .filter((operator) => !deletedOperatorIds.has(String(operator.code).toLowerCase()));
   const users = upsertBy(existing.users, incoming.users, (item) => item.id)
     .filter((user) => !deletedUserIds.has(user.id) || user.id === "admin");
   const attendance = upsertBy(existing.attendance, incoming.attendance, (item) => item.id)
@@ -104,7 +114,8 @@ function mergeState(existing, incoming) {
     users,
     attendance,
     deletedAttendanceIds: [...deletedAttendanceIds],
-    deletedUserIds: [...deletedUserIds]
+    deletedUserIds: [...deletedUserIds],
+    deletedOperatorIds: [...deletedOperatorIds]
   };
 }
 
