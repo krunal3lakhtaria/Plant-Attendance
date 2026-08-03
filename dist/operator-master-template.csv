@@ -1,0 +1,4 @@
+emp_id,name,department,line,current_process,doj,skill_level,issued_date,renew_date
+303408,Sample Operator,Production,Assembly-K2,F/A,14-07-2025,Level 4,23-04-2026,22-07-2026
+OP1001,Asha Patel,Assembly,Line 1,Welding,,,,
+OP1002,Ravi Shah,Assembly,Line 1,Fitting,,,,

@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Plant Attendance</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <section class="login-screen" id="loginScreen">
+      <div class="login-panel">
+        <div class="brand compact">
+          <div class="brand-mark">PA</div>
+          <div>
+            <h1>Plant Attendance</h1>
+            <p>Secure line-wise login</p>
+          </div>
+        </div>
+        <div class="login-form">
+          <label>
+            User ID
+            <input id="loginUser" autocomplete="username" placeholder="User ID">
+          </label>
+          <label>
+            Password
+            <input id="loginPass" type="password" autocomplete="current-password" placeholder="Password">
+          </label>
+          <button class="primary-btn" id="loginBtn">Login</button>
+        </div>
+        <p class="hint">Production logins are loaded from the Postgres database. Import existing users before plant use.</p>
+      </div>
+    </section>
+
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">PA</div>
+          <div>
+            <h1>Plant Attendance</h1>
+            <p>Line-wise daily manpower</p>
+          </div>
+        </div>
+
+        <nav class="nav-tabs" aria-label="Main views">
+          <button class="nav-tab active" data-view="supervisor" title="Supervisor attendance">
+            <span>Scan</span>
+          </button>
+          <button class="nav-tab" data-view="admin" title="Admin dashboard">
+            <span>Admin</span>
+          </button>
+          <button class="nav-tab" data-view="blacklist" title="Absenteeism check">
+            <span>Blacklist</span>
+          </button>
+          <button class="nav-tab" data-view="master" title="Operator master">
+            <span>Master</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-card user-card">
+          <span class="label">Logged in</span>
+          <strong id="currentUserLabel">Not logged in</strong>
+          <small id="currentScopeLabel"></small>
+          <button class="ghost-btn" id="logoutBtn">Logout</button>
+        </div>
+
+        <div class="sidebar-card">
+          <span class="label">Today</span>
+          <strong id="todayLabel"></strong>
+          <small>All records are saved on this device and can be exported.</small>
+        </div>
+      </aside>
+
+      <main>
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Morning attendance</p>
+            <h2 id="viewTitle">Supervisor Scan</h2>
+          </div>
+          <div class="topbar-actions">
+            <button class="ghost-btn" id="backupBtn" title="Download all backup data">Backup</button>
+            <button class="primary-btn" id="downloadBtn" title="Download Excel-readable attendance file">Download Excel</button>
+          </div>
+        </header>
+
+        <section class="view active" id="supervisorView">
+          <div class="toolbar">
+            <label>
+              Date
+              <input type="date" id="attendanceDate">
+            </label>
+            <label>
+              Department
+              <select id="departmentSelect"></select>
+            </label>
+            <label>
+              Line
+              <select id="lineSelect"></select>
+            </label>
+            <label>
+              Shift
+              <select id="shiftSelect">
+                <option>A</option>
+                <option>B</option>
+                <option>C</option>
+                <option>General</option>
+              </select>
+            </label>
+            <label>
+              Line Leader
+              <input id="supervisorName" placeholder="Name" readonly>
+            </label>
+          </div>
+
+          <div class="scan-grid">
+            <section class="panel scanner-panel">
+              <div class="panel-head">
+                <div>
+                  <h3>Skill Card Scanner</h3>
+                  <p>Each skill card is saved automatically after scan.</p>
+                </div>
+                <button class="ghost-btn" id="cameraBtn" title="Start camera scanning">Start Camera</button>
+              </div>
+
+              <div class="camera-wrap">
+                <video id="scannerVideo" muted playsinline></video>
+                <div class="scan-frame"></div>
+                <div class="camera-empty" id="cameraEmpty">Camera scanner ready</div>
+              </div>
+
+              <div class="quick-entry">
+                <input id="scanInput" placeholder="Scanner ready for Emp. ID">
+                <button class="primary-btn" id="missedCardBtn">Missed Card ID</button>
+                <button class="ghost-btn" id="queryFromScanBtn">Query</button>
+              </div>
+
+              <div class="last-scan" id="lastScan">
+                <span>No operator scanned yet.</span>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <h3>Current Line Count</h3>
+                  <p>Live count for selected date, shift, department and line.</p>
+                </div>
+              </div>
+              <div class="metrics">
+                <div class="metric">
+                  <span>Present</span>
+                  <strong id="presentCount">0</strong>
+                </div>
+                <div class="metric">
+                  <span>Required</span>
+                  <strong id="requiredCount">0</strong>
+                </div>
+                <div class="metric">
+                  <span>Gap</span>
+                  <strong id="gapCount">0</strong>
+                </div>
+              </div>
+              <div class="skill-summary" id="skillSummary"></div>
+            </section>
+          </div>
+
+          <section class="panel table-panel">
+            <div class="panel-head">
+              <div>
+                <h3>Line Attendance</h3>
+                <p>Names remain available as backup for admin.</p>
+              </div>
+              <button class="danger-btn" id="clearLineBtn">Clear Line</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Emp. ID</th>
+                    <th>Name</th>
+                    <th>Current Process</th>
+                    <th>Department</th>
+                    <th>Line</th>
+                    <th>Status</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="attendanceRows"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="blacklistView">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Punctuality Query</h3>
+                <p>Scan or enter Emp. ID to see absent days.</p>
+              </div>
+              <button class="primary-btn" id="queryBtn">Query</button>
+            </div>
+            <div class="query-line">
+              <input id="queryInput" placeholder="Emp. ID, e.g. 303408">
+              <select id="queryShift">
+                <option value="all">All Shifts</option>
+                <option>A</option>
+                <option>B</option>
+                <option>C</option>
+                <option>General</option>
+              </select>
+            </div>
+            <div id="queryResult" class="query-result">
+              <span>Enter an Emp. ID to check attendance history.</span>
+            </div>
+          </section>
+
+          <section class="panel table-panel">
+            <div class="panel-head">
+              <div>
+                <h3>Blacklist Over 20%</h3>
+                <p>Based on absenteeism in recorded line attendance sessions.</p>
+              </div>
+              <button class="ghost-btn" id="downloadBlacklistBtn">Download Blacklist</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Emp. ID</th>
+                    <th>Name</th>
+                    <th>Department</th>
+                    <th>Line</th>
+                    <th>Working Sessions</th>
+                    <th>Absent</th>
+                    <th>Absent %</th>
+                    <th>Absent Days</th>
+                  </tr>
+                </thead>
+                <tbody id="blacklistRows"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="adminView">
+          <div class="admin-grid">
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <h3>Plant Summary</h3>
+                  <p>Compiled line-wise manpower count.</p>
+                </div>
+              </div>
+              <div class="metrics wide">
+                <div class="metric"><span>Total Present</span><strong id="adminTotal">0</strong></div>
+                <div class="metric"><span>Lines Covered</span><strong id="adminLines">0</strong></div>
+                <div class="metric"><span>Operators</span><strong id="adminOperators">0</strong></div>
+              </div>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <h3>Department Count</h3>
+                  <p>Ready for morning manpower review.</p>
+                </div>
+              </div>
+              <div id="deptBars" class="bars"></div>
+            </section>
+          </div>
+
+          <section class="panel table-panel">
+            <div class="panel-head">
+              <div>
+                <h3>Compiled Attendance</h3>
+                <p>Line totals with backup names available in export.</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Department</th>
+                    <th>Line</th>
+                    <th>Shift</th>
+                    <th>Present</th>
+                    <th>Processes</th>
+                    <th>Names</th>
+                  </tr>
+                </thead>
+                <tbody id="adminRows"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel table-panel">
+            <div class="panel-head">
+              <div>
+                <h3>Login Control</h3>
+                <p>Admin creates department and line-leader access.</p>
+              </div>
+              <button class="primary-btn" id="addUserBtn">Create Login</button>
+            </div>
+            <div class="operator-form login-create">
+              <input id="newLoginName" placeholder="Leader/Admin name">
+              <input id="newLoginId" placeholder="User ID">
+              <input id="newLoginPass" placeholder="Password">
+              <select id="newLoginRole">
+                <option value="supervisor">Line Leader</option>
+                <option value="admin">Admin</option>
+              </select>
+              <input id="newLoginDept" placeholder="Department">
+              <input id="newLoginLine" placeholder="Line">
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>User ID</th>
+                    <th>Role</th>
+                    <th>Department</th>
+                    <th>Line</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="userRows"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="masterView">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Operator Master</h3>
+                <p>Import your employee list or add operators manually.</p>
+              </div>
+              <button class="ghost-btn" id="sampleBtn">Load Sample Master</button>
+            </div>
+            <div class="master-actions">
+              <label class="file-import">
+                Import CSV
+                <input type="file" id="masterFile" accept=".csv,text/csv">
+              </label>
+              <button class="primary-btn" id="addOperatorBtn">Add Operator</button>
+            </div>
+            <div class="operator-form">
+              <input id="newCode" placeholder="Emp. ID">
+              <input id="newName" placeholder="Name">
+              <input id="newSkill" placeholder="Current Process">
+              <input id="newDept" placeholder="Department">
+              <input id="newLine" placeholder="Line">
+              <input id="newDoj" placeholder="DOJ">
+              <input id="newSkillLevel" placeholder="Skill Level">
+            </div>
+            <p class="hint">CSV columns: emp_id, name, department, line, current_process, doj, skill_level, issued_date, renew_date. Your sample QR decodes to Emp. ID only, so details are pulled from master data.</p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Emp. ID</th>
+                    <th>Name</th>
+                    <th>Current Process</th>
+                    <th>Department</th>
+                    <th>Line</th>
+                    <th>DOJ</th>
+                    <th>Skill Level</th>
+                  </tr>
+                </thead>
+                <tbody id="masterRows"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    <script src="app.js"></script>
+  </body>
+</html>
