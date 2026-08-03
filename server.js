@@ -38,7 +38,14 @@ const defaultUsers = [
 ];
 
 function defaultState() {
-  return { operators: sampleOperators, attendance: [], users: defaultUsers };
+  return {
+    operators: sampleOperators,
+    attendance: [],
+    users: defaultUsers,
+    deletedAttendanceIds: [],
+    deletedUserIds: [],
+    deletedOperatorIds: []
+  };
 }
 
 function ensureDataFile() {
@@ -55,7 +62,10 @@ function readState() {
     return {
       operators: Array.isArray(parsed.operators) ? parsed.operators : sampleOperators,
       attendance: Array.isArray(parsed.attendance) ? parsed.attendance : [],
-      users: Array.isArray(parsed.users) ? parsed.users : defaultUsers
+      users: Array.isArray(parsed.users) ? parsed.users : defaultUsers,
+      deletedAttendanceIds: Array.isArray(parsed.deletedAttendanceIds) ? parsed.deletedAttendanceIds : [],
+      deletedUserIds: Array.isArray(parsed.deletedUserIds) ? parsed.deletedUserIds : [],
+      deletedOperatorIds: Array.isArray(parsed.deletedOperatorIds) ? parsed.deletedOperatorIds : []
     };
   } catch {
     return defaultState();
@@ -112,7 +122,10 @@ const server = http.createServer(async (req, res) => {
       writeState({
         operators: Array.isArray(state.operators) ? state.operators : [],
         attendance: Array.isArray(state.attendance) ? state.attendance : [],
-        users: Array.isArray(state.users) ? state.users : defaultUsers
+        users: Array.isArray(state.users) ? state.users : defaultUsers,
+        deletedAttendanceIds: Array.isArray(state.deletedAttendanceIds) ? state.deletedAttendanceIds : [],
+        deletedUserIds: Array.isArray(state.deletedUserIds) ? state.deletedUserIds : [],
+        deletedOperatorIds: Array.isArray(state.deletedOperatorIds) ? state.deletedOperatorIds : []
       });
       sendJson(res, 200, { ok: true });
       return;

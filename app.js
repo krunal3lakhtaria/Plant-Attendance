@@ -36,11 +36,12 @@ let stream = null;
 let detector = null;
 let scanning = false;
 let serverBacked = false;
+let serverLoaded = false;
 let lastScanValue = "";
 let lastScanAt = 0;
 
 const $ = (id) => document.getElementById(id);
-const today = new Date().toISOString().slice(0, 10);
+const today = localDate();
 
 $("attendanceDate").value = today;
 $("todayLabel").textContent = new Date().toLocaleDateString(undefined, {
@@ -50,13 +51,19 @@ $("todayLabel").textContent = new Date().toLocaleDateString(undefined, {
   year: "numeric"
 });
 
+function localDate(date = new Date()) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+}
+
 function normalizeState(parsed = {}) {
   return {
-    operators: parsed.operators?.length ? parsed.operators : sampleOperators,
-    attendance: parsed.attendance || [],
-    users: parsed.users || defaultUsers,
-    deletedAttendanceIds: parsed.deletedAttendanceIds || [],
-    deletedUserIds: parsed.deletedUserIds || []
+    operators: Array.isArray(parsed.operators) ? parsed.operators : sampleOperators,
+    attendance: Array.isArray(parsed.attendance) ? parsed.attendance : [],
+    users: Array.isArray(parsed.users) ? parsed.users : defaultUsers,
+    deletedAttendanceIds: Array.isArray(parsed.deletedAttendanceIds) ? parsed.deletedAttendanceIds : [],
+    deletedUserIds: Array.isArray(parsed.deletedUserIds) ? parsed.deletedUserIds : [],
+    deletedOperatorIds: Array.isArray(parsed.deletedOperatorIds) ? parsed.deletedOperatorIds : []
   };
 }
 
@@ -100,6 +107,9 @@ async function loadServerState() {
     renderAll();
   } catch {
     serverBacked = false;
+  } finally {
+    serverLoaded = true;
+    applyLoginState();
   }
 }
 
@@ -191,12 +201,26 @@ function parseCardText(text) {
 }
 
 function upsertOperator(operator) {
+  state.deletedOperatorIds = state.deletedOperatorIds.filter((id) => id.toLowerCase() !== operator.code.toLowerCase());
   const index = state.operators.findIndex((op) => op.code.toLowerCase() === operator.code.toLowerCase());
   if (index >= 0) {
     state.operators[index] = { ...state.operators[index], ...operator };
   } else {
     state.operators.push(operator);
   }
+}
+
+function replaceOperators(operators) {
+  const nextCodes = new Set(operators.map((operator) => operator.code.toLowerCase()));
+  const removedCodes = state.operators
+    .map((operator) => operator.code)
+    .filter((code) => code && !nextCodes.has(code.toLowerCase()));
+
+  state.deletedOperatorIds = unique([
+    ...state.deletedOperatorIds,
+    ...removedCodes
+  ]);
+  state.operators = operators;
 }
 
 function scanAttendance(text, source = "Skill Card") {
@@ -514,6 +538,7 @@ function renderMaster() {
 }
 
 function renderUsers() {
+  const adminCount = state.users.filter((user) => user.role === "admin").length;
   $("userRows").innerHTML = state.users.map((user) => `
     <tr>
       <td>${escapeHtml(user.name)}</td>
@@ -521,9 +546,15 @@ function renderUsers() {
       <td>${escapeHtml(user.role)}</td>
       <td>${escapeHtml(user.department || "All")}</td>
       <td>${escapeHtml(user.line || "All")}</td>
-      <td>${user.id === "admin" ? "" : `<button class="mini-btn" data-remove-user="${escapeHtml(user.id)}">Remove</button>`}</td>
+      <td>${canRemoveUser(user, adminCount) ? `<button class="mini-btn" data-remove-user="${escapeHtml(user.id)}">Remove</button>` : ""}</td>
     </tr>
   `).join("");
+}
+
+function canRemoveUser(user, adminCount = state.users.filter((item) => item.role === "admin").length) {
+  if (currentUser?.id === user.id) return false;
+  if (user.role === "admin" && adminCount <= 1) return false;
+  return true;
 }
 
 function renderAll() {
@@ -597,7 +628,14 @@ function exportExcel() {
 }
 
 function exportBackup() {
-  download(`plant-attendance-backup-${today}.json`, JSON.stringify(state, null, 2), "application/json");
+  const backup = {
+    ...state,
+    users: state.users.map(({ password, ...user }) => ({
+      ...user,
+      hasPassword: Boolean(password)
+    }))
+  };
+  download(`plant-attendance-backup-${today}.json`, JSON.stringify(backup, null, 2), "application/json");
 }
 
 function exportBlacklist() {
@@ -625,9 +663,37 @@ function exportBlacklist() {
 }
 
 function parseCsv(text) {
-  return text.split(/\r?\n/)
-    .map((line) => line.split(",").map((cell) => cell.trim()))
-    .filter((row) => row.length >= 5 && row[0]);
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+
+    if (char === '"' && quoted && next === '"') {
+      cell += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === "," && !quoted) {
+      row.push(cell.trim());
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") index += 1;
+      row.push(cell.trim());
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+
+  row.push(cell.trim());
+  if (row.some(Boolean)) rows.push(row);
+  return rows.filter((item) => item.length >= 5 && item[0]);
 }
 
 function setActiveView(view) {
@@ -648,7 +714,14 @@ function applyLoginState() {
   const loggedIn = Boolean(currentUser);
   $("loginScreen").classList.toggle("hidden", loggedIn);
   document.querySelector(".app-shell").classList.toggle("locked", !loggedIn);
-  if (!loggedIn) return;
+  if (!loggedIn) {
+    const firstAdminMode = serverLoaded && state.users.length === 0;
+    $("loginBtn").textContent = firstAdminMode ? "Create First Admin" : "Login";
+    $("loginHint").textContent = firstAdminMode
+      ? "No production login exists yet. Create the first admin before sharing the app link."
+      : "Production logins are loaded from the Postgres database. Import existing users before plant use.";
+    return;
+  }
 
   $("currentUserLabel").textContent = `${currentUser.name} (${currentUser.role})`;
   $("currentScopeLabel").textContent = currentUser.role === "supervisor"
@@ -657,13 +730,41 @@ function applyLoginState() {
   $("departmentSelect").disabled = currentUser.role === "supervisor";
   $("lineSelect").disabled = currentUser.role === "supervisor";
   $("supervisorName").value = currentUser.name;
+  const activeView = document.querySelector(".nav-tab.active")?.dataset.view || "supervisor";
   refreshFilters();
-  setActiveView("supervisor");
+  setActiveView(activeView);
 }
 
 function login() {
   const id = $("loginUser").value.trim();
   const password = $("loginPass").value;
+  if (!serverLoaded && location.protocol.startsWith("http")) {
+    showToast("Loading production login data. Try again in a moment.");
+    loadServerState();
+    return;
+  }
+  if (!state.users.length) {
+    if (!id || !password) {
+      showToast("Enter first admin user ID and password.");
+      return;
+    }
+    const user = {
+      name: id,
+      id,
+      password,
+      role: "admin",
+      department: "All",
+      line: "All"
+    };
+    state.users.push(user);
+    currentUser = user;
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(user));
+    saveState();
+    applyLoginState();
+    renderAll();
+    showToast("First admin login created.");
+    return;
+  }
   const user = state.users.find((item) => item.id === id && item.password === password);
   if (!user) {
     showToast("Login failed. Check user ID/password or import admin user into database.");
@@ -721,6 +822,8 @@ $("downloadBlacklistBtn").addEventListener("click", exportBlacklist);
 $("attendanceRows").addEventListener("click", (event) => {
   const id = event.target.dataset.remove;
   if (!id) return;
+  const record = state.attendance.find((item) => item.id === id);
+  if (!window.confirm(`Remove attendance for ${record?.name || "this operator"}?`)) return;
   state.deletedAttendanceIds.push(id);
   state.attendance = state.attendance.filter((item) => item.id !== id);
   saveState();
@@ -729,6 +832,8 @@ $("attendanceRows").addEventListener("click", (event) => {
 
 $("clearLineBtn").addEventListener("click", () => {
   const records = currentLineRecords();
+  if (!records.length) return;
+  if (!window.confirm(`Clear ${records.length} attendance record(s) for this line and shift?`)) return;
   const ids = new Set(records.map((record) => record.id));
   state.deletedAttendanceIds.push(...ids);
   state.attendance = state.attendance.filter((record) => !ids.has(record.id));
@@ -738,7 +843,8 @@ $("clearLineBtn").addEventListener("click", () => {
 });
 
 $("sampleBtn").addEventListener("click", () => {
-  state.operators = sampleOperators;
+  if (!window.confirm("Replace current operator master with sample data?")) return;
+  replaceOperators(sampleOperators);
   saveState();
   refreshFilters();
   showToast("Sample master loaded.");
@@ -772,7 +878,7 @@ $("masterFile").addEventListener("change", async (event) => {
   const firstHeader = rows[0]?.[0]?.toLowerCase();
   const hasHeader = firstHeader === "code" || firstHeader === "emp_id";
   const dataRows = hasHeader ? rows.slice(1) : rows;
-  state.operators = dataRows.map(([code, name, department, line, skill, doj = "", skillLevel = "", issuedDate = "", renewDate = ""]) => ({
+  const importedOperators = dataRows.map(([code, name, department, line, skill, doj = "", skillLevel = "", issuedDate = "", renewDate = ""]) => ({
     code,
     name,
     department,
@@ -783,6 +889,7 @@ $("masterFile").addEventListener("change", async (event) => {
     issuedDate,
     renewDate
   }));
+  replaceOperators(importedOperators);
   saveState();
   refreshFilters();
   showToast(`${state.operators.length} operators imported.`);
@@ -816,6 +923,13 @@ $("addUserBtn").addEventListener("click", () => {
 $("userRows").addEventListener("click", (event) => {
   const id = event.target.dataset.removeUser;
   if (!id) return;
+  const user = state.users.find((item) => item.id === id);
+  if (!user || !canRemoveUser(user)) {
+    showToast("This login cannot be removed while it is protecting admin access.");
+    renderUsers();
+    return;
+  }
+  if (!window.confirm(`Remove login ${id}?`)) return;
   state.deletedUserIds.push(id);
   state.users = state.users.filter((user) => user.id !== id);
   saveState();
