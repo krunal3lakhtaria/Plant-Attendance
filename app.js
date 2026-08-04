@@ -779,6 +779,7 @@ function login() {
 
 document.querySelectorAll(".nav-tab").forEach((button) => {
   button.addEventListener("click", () => {
+    closeOptionsMenu();
     loadServerState();
     setActiveView(button.dataset.view);
   });
@@ -792,8 +793,20 @@ $("logoutBtn").addEventListener("click", () => {
   currentUser = null;
   sessionStorage.removeItem(SESSION_KEY);
   stopCamera();
+  closeOptionsMenu();
   applyLoginState();
 });
+
+$("menuBtn").addEventListener("click", () => {
+  const sidebar = document.querySelector(".sidebar");
+  const open = sidebar.classList.toggle("menu-open");
+  $("menuBtn").setAttribute("aria-expanded", String(open));
+});
+
+function closeOptionsMenu() {
+  document.querySelector(".sidebar").classList.remove("menu-open");
+  $("menuBtn").setAttribute("aria-expanded", "false");
+}
 
 $("departmentSelect").addEventListener("change", refreshLines);
 ["lineSelect", "shiftSelect", "attendanceDate"].forEach((id) => {
