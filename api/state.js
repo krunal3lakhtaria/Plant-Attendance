@@ -17,6 +17,13 @@ const DEFAULT_STATE = {
 
 module.exports = async function handler(req, res) {
   try {
+    setCorsHeaders(res);
+
+    if (req.method === "OPTIONS") {
+      res.status(204).end();
+      return;
+    }
+
     if (!process.env.DATABASE_URL) {
       res.status(500).json({ error: "DATABASE_URL is not configured" });
       return;
@@ -39,12 +46,18 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    res.setHeader("Allow", "GET, POST");
+    res.setHeader("Allow", "GET, POST, OPTIONS");
     res.status(405).json({ error: "Method not allowed" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
+
+function setCorsHeaders(res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+}
 
 async function ensureSchema() {
   await pool.query(`
