@@ -1,6 +1,8 @@
 const STORAGE_KEY = "plant-attendance-v2";
 const SESSION_KEY = "plant-attendance-current-user";
 const SYNC_PENDING_KEY = "plant-attendance-sync-pending";
+const PRODUCTION_ORIGIN = "https://backend-krunal3lakhtaria-3113s-projects.vercel.app";
+const API_BASE = location.protocol === "file:" ? PRODUCTION_ORIGIN : "";
 
 const sampleOperators = [
   ["303408", "Sample Operator", "F/A", "Production", "Assembly-K2", "14-07-2025", "Level 4", "23-04-2026", "22-07-2026"],
@@ -126,9 +128,9 @@ async function syncStateToServer() {
   const body = JSON.stringify(state);
 
   try {
-    const response = await fetch("/api/state", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+    const response = await fetch(apiUrl("/api/state"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body
     });
     if (!response.ok) throw new Error("Sync failed");
@@ -144,12 +146,13 @@ async function syncStateToServer() {
 
 async function loadServerState() {
   try {
-    const response = await fetch("/api/state", { cache: "no-store" });
+    const response = await fetch(apiUrl("/api/state"), { cache: "no-store" });
     if (!response.ok) return;
     const serverState = normalizeState(await response.json());
     serverBacked = true;
     state = pendingSync ? mergeState(serverState, state) : serverState;
     writeLocalState();
+    reconcileCurrentUser();
     if (pendingSync) syncStateToServer();
     applyLoginState();
     renderAll();
@@ -159,6 +162,22 @@ async function loadServerState() {
     serverLoaded = true;
     applyLoginState();
   }
+}
+
+function apiUrl(path) {
+  return `${API_BASE}${path}`;
+}
+
+function reconcileCurrentUser() {
+  if (!currentUser) return;
+  const freshUser = state.users.find((user) => user.id === currentUser.id);
+  if (!freshUser) {
+    currentUser = null;
+    sessionStorage.removeItem(SESSION_KEY);
+    return;
+  }
+  currentUser = freshUser;
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(currentUser));
 }
 
 function mergeState(existing, incoming) {
@@ -830,7 +849,7 @@ function applyLoginState() {
 function login() {
   const id = $("loginUser").value.trim();
   const password = $("loginPass").value;
-  if (!serverLoaded && location.protocol.startsWith("http")) {
+  if (!serverLoaded) {
     showToast("Loading production login data. Try again in a moment.");
     loadServerState();
     return;
