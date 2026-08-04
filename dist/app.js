@@ -1,5 +1,6 @@
 const STORAGE_KEY = "plant-attendance-v2";
 const SESSION_KEY = "plant-attendance-current-user";
+const SYNC_PENDING_KEY = "plant-attendance-sync-pending";
 
 const sampleOperators = [
   ["303408", "Sample Operator", "F/A", "Production", "Assembly-K2", "14-07-2025", "Level 4", "23-04-2026", "22-07-2026"],
@@ -37,6 +38,9 @@ let detector = null;
 let scanning = false;
 let serverBacked = false;
 let serverLoaded = false;
+let pendingSync = loadPendingSync();
+let saveVersion = 0;
+let syncInFlight = false;
 let lastScanValue = "";
 let lastScanAt = 0;
 
@@ -75,6 +79,27 @@ function loadState() {
   }
 }
 
+function loadPendingSync() {
+  try {
+    return localStorage.getItem(SYNC_PENDING_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function setPendingSync(value) {
+  pendingSync = value;
+  try {
+    if (value) {
+      localStorage.setItem(SYNC_PENDING_KEY, "1");
+    } else {
+      localStorage.removeItem(SYNC_PENDING_KEY);
+    }
+  } catch {
+    pendingSync = true;
+  }
+}
+
 function loadCurrentUser() {
   try {
     return JSON.parse(sessionStorage.getItem(SESSION_KEY) || "null");
@@ -83,26 +108,49 @@ function loadCurrentUser() {
   }
 }
 
+function writeLocalState(nextState = state) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
+}
+
 function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  if (!serverBacked) return;
-  fetch("/api/state", {
+  saveVersion += 1;
+  writeLocalState();
+  setPendingSync(true);
+  syncStateToServer();
+}
+
+async function syncStateToServer() {
+  if (!serverBacked || syncInFlight) return;
+  syncInFlight = true;
+  const version = saveVersion;
+  const body = JSON.stringify(state);
+
+  try {
+    const response = await fetch("/api/state", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(state)
-  }).catch(() => {
+      body
+    });
+    if (!response.ok) throw new Error("Sync failed");
+    if (version === saveVersion) setPendingSync(false);
+  } catch {
     serverBacked = false;
     showToast("Server sync paused. Data is still saved in this browser.");
-  });
+  } finally {
+    syncInFlight = false;
+    if (serverBacked && pendingSync && version !== saveVersion) syncStateToServer();
+  }
 }
 
 async function loadServerState() {
   try {
     const response = await fetch("/api/state", { cache: "no-store" });
     if (!response.ok) return;
-    state = normalizeState(await response.json());
+    const serverState = normalizeState(await response.json());
     serverBacked = true;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    state = pendingSync ? mergeState(serverState, state) : serverState;
+    writeLocalState();
+    if (pendingSync) syncStateToServer();
     applyLoginState();
     renderAll();
   } catch {
@@ -111,6 +159,50 @@ async function loadServerState() {
     serverLoaded = true;
     applyLoginState();
   }
+}
+
+function mergeState(existing, incoming) {
+  const deletedAttendanceIds = new Set([
+    ...existing.deletedAttendanceIds,
+    ...incoming.deletedAttendanceIds
+  ]);
+  const deletedUserIds = new Set([
+    ...existing.deletedUserIds,
+    ...incoming.deletedUserIds
+  ]);
+  const deletedOperatorIds = new Set([
+    ...existing.deletedOperatorIds,
+    ...incoming.deletedOperatorIds
+  ].map((id) => String(id).toLowerCase()));
+
+  incoming.operators.forEach((operator) => {
+    if (operator.code) deletedOperatorIds.delete(String(operator.code).toLowerCase());
+  });
+
+  return {
+    operators: upsertBy(existing.operators, incoming.operators, (item) => item.code)
+      .filter((operator) => !deletedOperatorIds.has(String(operator.code).toLowerCase())),
+    users: upsertBy(existing.users, incoming.users, (item) => item.id)
+      .filter((user) => !deletedUserIds.has(user.id) || user.id === "admin"),
+    attendance: upsertBy(existing.attendance, incoming.attendance, (item) => item.id)
+      .filter((record) => !deletedAttendanceIds.has(record.id)),
+    deletedAttendanceIds: [...deletedAttendanceIds],
+    deletedUserIds: [...deletedUserIds],
+    deletedOperatorIds: [...deletedOperatorIds]
+  };
+}
+
+function upsertBy(existing, incoming, keyFn) {
+  const map = new Map();
+  for (const item of existing) {
+    const key = keyFn(item);
+    if (key) map.set(String(key).toLowerCase(), item);
+  }
+  for (const item of incoming) {
+    const key = keyFn(item);
+    if (key) map.set(String(key).toLowerCase(), { ...map.get(String(key).toLowerCase()), ...item });
+  }
+  return [...map.values()];
 }
 
 function groupKey(record) {
@@ -947,6 +1039,18 @@ $("userRows").addEventListener("click", (event) => {
   state.users = state.users.filter((user) => user.id !== id);
   saveState();
   renderUsers();
+});
+
+window.addEventListener("online", () => {
+  if (pendingSync) loadServerState();
+});
+
+window.addEventListener("focus", () => {
+  if (pendingSync) loadServerState();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && pendingSync) loadServerState();
 });
 
 refreshFilters();
