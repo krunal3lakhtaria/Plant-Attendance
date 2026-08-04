@@ -109,9 +109,34 @@ button {
   border-radius: 8px;
   display: grid;
   place-items: center;
-  background: #e8c468;
-  color: #10272d;
-  font-weight: 900;
+  padding: 6px;
+  background: #f7fbfa;
+  border: 1px solid rgba(16, 39, 45, .14);
+  box-shadow: inset 0 -1px 0 rgba(16, 39, 45, .08);
+}
+
+.brand-mark svg {
+  width: 100%;
+  height: 100%;
+}
+
+.logo-shield {
+  fill: #10272d;
+}
+
+.logo-lines {
+  fill: none;
+  stroke: #d7e5e8;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.logo-check {
+  fill: none;
+  stroke: #e8c468;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 h1, h2, h3, p { margin: 0; }
