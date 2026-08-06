@@ -461,6 +461,15 @@ video {
 .status.verified { background: #e8f6ed; color: var(--green); }
 .status.present { background: #e8f6ed; color: var(--green); }
 .status.risk { background: #fee4e2; color: var(--red); }
+.status.duplicate { background: #fff4df; color: var(--amber); }
+
+.duplicate-row td {
+  background: #fffbeb;
+}
+
+.duplicate-row td:first-child {
+  border-left: 4px solid #f5b400;
+}
 
 .query-line {
   display: grid;

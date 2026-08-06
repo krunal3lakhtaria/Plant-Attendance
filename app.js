@@ -697,21 +697,12 @@ function scanAttendance(text, source = "Skill Card") {
   }
 
   const context = selectedContext();
-  if (currentUser?.role === "supervisor" && (operator.department !== context.department || operator.line !== context.line)) {
-    showToast(`${operator.name} belongs to ${operator.department} / ${operator.line}. Not saved for this login.`);
-    return;
-  }
-
   const duplicate = state.attendance.find((record) =>
     record.date === context.date &&
     record.shift === context.shift &&
     record.code.toLowerCase() === operator.code.toLowerCase()
   );
-  if (duplicate) {
-    $("lastScan").innerHTML = `<strong>${escapeHtml(operator.name)}</strong><br>Already scanned today for shift ${escapeHtml(context.shift)}.`;
-    showToast("Already scanned. Duplicate not saved.");
-    return;
-  }
+  const isDuplicate = Boolean(duplicate);
 
   const record = {
     id: crypto.randomUUID(),
@@ -725,21 +716,29 @@ function scanAttendance(text, source = "Skill Card") {
     skillLevel: operator.skillLevel || "",
     issuedDate: operator.issuedDate || "",
     renewDate: operator.renewDate || "",
-    department: operator.department || context.department,
-    line: operator.line || context.line,
+    department: context.department,
+    line: context.line,
+    homeDepartment: operator.department || context.department,
+    homeLine: operator.line || context.line,
     shift: context.shift,
     supervisor: context.supervisor,
     leaderId: context.leaderId,
     source: scanSource,
-    status: "Present"
+    status: isDuplicate ? "Duplicate" : "Present",
+    duplicateOf: duplicate?.id || ""
   };
 
   state.attendance.push(record);
   saveState();
-  $("lastScan").innerHTML = `<strong>${escapeHtml(operator.name)}</strong><br>${escapeHtml(operator.code)} · ${escapeHtml(operator.skill)} · saved automatically`;
+  $("lastScan").innerHTML = isDuplicate
+    ? `<strong>${escapeHtml(operator.name)}</strong><br>${escapeHtml(operator.code)} · duplicate highlighted · present count unchanged`
+    : `<strong>${escapeHtml(operator.name)}</strong><br>${escapeHtml(operator.code)} · ${escapeHtml(operator.skill)} · saved automatically`;
   $("scanInput").value = "";
   refreshFilters();
   renderAll();
+  if (isDuplicate) {
+    showToast(`Duplicate scan highlighted. ${operator.name} is counted once only.`);
+  }
 }
 
 async function toggleCamera() {
@@ -844,17 +843,28 @@ function currentLineRecords() {
   );
 }
 
+function countedRecords(records = state.attendance) {
+  const seen = new Set();
+  return records.filter((record) => {
+    const key = `${record.date}::${record.shift}::${String(record.code).toLowerCase()}`;
+    if (record.status === "Duplicate" || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function renderAttendance() {
   const records = currentLineRecords();
+  const counted = countedRecords(records);
   const required = state.operators.filter((op) =>
     op.department === $("departmentSelect").value && op.line === $("lineSelect").value
   ).length;
 
-  $("presentCount").textContent = records.length;
+  $("presentCount").textContent = counted.length;
   $("requiredCount").textContent = required;
-  $("gapCount").textContent = Math.max(required - records.length, 0);
+  $("gapCount").textContent = Math.max(required - counted.length, 0);
 
-  const skillCounts = records.reduce((acc, record) => {
+  const skillCounts = counted.reduce((acc, record) => {
     acc[record.skill] = (acc[record.skill] || 0) + 1;
     return acc;
   }, {});
@@ -863,14 +873,14 @@ function renderAttendance() {
     .join("") || `<div class="pill-row"><span>No skill count yet</span><strong>0</strong></div>`;
 
   $("attendanceRows").innerHTML = records.map((record) => `
-    <tr>
+    <tr class="${record.status === "Duplicate" ? "duplicate-row" : ""}">
       <td>${escapeHtml(record.time)}</td>
       <td>${escapeHtml(record.code)}</td>
       <td>${escapeHtml(record.name)}</td>
       <td>${escapeHtml(record.skill)}</td>
       <td>${escapeHtml(record.department)}</td>
       <td>${escapeHtml(record.line)}</td>
-      <td><span class="status present">${escapeHtml(record.source || record.status)}</span></td>
+      <td><span class="status ${record.status === "Duplicate" ? "duplicate" : "present"}">${escapeHtml(record.status === "Duplicate" ? "Duplicate - counted once" : record.source || record.status)}</span></td>
       <td><button class="mini-btn" data-remove="${record.id}">Remove</button></td>
     </tr>
   `).join("") || `<tr><td colspan="8">No attendance marked for this line yet.</td></tr>`;
@@ -970,12 +980,13 @@ function renderQueryResult(operatorCode = $("queryInput").value.trim()) {
 
 function renderAdmin() {
   const records = scopedAttendance();
+  const counted = countedRecords(records);
   const groups = attendanceGroups();
-  $("adminTotal").textContent = records.length;
+  $("adminTotal").textContent = counted.length;
   $("adminLines").textContent = groups.length;
   $("adminOperators").textContent = state.operators.length;
 
-  const deptCounts = records.reduce((acc, record) => {
+  const deptCounts = counted.reduce((acc, record) => {
     acc[record.department] = (acc[record.department] || 0) + 1;
     return acc;
   }, {});
@@ -989,15 +1000,18 @@ function renderAdmin() {
   `).join("") || `<div class="bar-row"><span>No attendance yet</span><strong>0</strong></div>`;
 
   $("adminRows").innerHTML = groups.map(({ key, records: groupRecords, first }) => {
-    const skills = summarize(groupRecords.map((record) => record.skill));
-    const names = groupRecords.map((record) => record.name).join(", ");
+    const countedGroup = countedRecords(groupRecords);
+    const skills = summarize(countedGroup.map((record) => record.skill));
+    const names = groupRecords.map((record) =>
+      record.status === "Duplicate" ? `${record.name} (duplicate)` : record.name
+    ).join(", ");
     return `
       <tr>
         <td>${escapeHtml(first.date)}</td>
         <td>${escapeHtml(first.department)}</td>
         <td>${escapeHtml(first.line)}</td>
         <td>${escapeHtml(first.shift)}</td>
-        <td>${groupRecords.length}</td>
+        <td>${countedGroup.length}</td>
         <td>${escapeHtml(skills)}</td>
         <td>${escapeHtml(names)}</td>
       </tr>
@@ -1044,15 +1058,16 @@ function historyRecords() {
 
 function renderHistory() {
   const records = historyRecords();
+  const counted = countedRecords(records);
   const days = new Set(records.map((record) => record.date));
   const lines = new Set(records.map((record) => groupKey(record)));
 
-  $("historyTotal").textContent = records.length;
+  $("historyTotal").textContent = counted.length;
   $("historyDays").textContent = days.size;
   $("historyLines").textContent = lines.size;
 
   $("historyRows").innerHTML = records.map((record) => `
-    <tr>
+    <tr class="${record.status === "Duplicate" ? "duplicate-row" : ""}">
       <td>${escapeHtml(record.date)}</td>
       <td>${escapeHtml(record.time)}</td>
       <td>${escapeHtml(record.code)}</td>
@@ -1062,7 +1077,7 @@ function renderHistory() {
       <td>${escapeHtml(record.shift)}</td>
       <td>${escapeHtml(record.currentProcess || record.skill)}</td>
       <td>${escapeHtml(record.supervisor)}</td>
-      <td><span class="status present">${escapeHtml(record.source || record.status)}</span></td>
+      <td><span class="status ${record.status === "Duplicate" ? "duplicate" : "present"}">${escapeHtml(record.status === "Duplicate" ? "Duplicate - counted once" : record.source || record.status)}</span></td>
     </tr>
   `).join("") || `<tr><td colspan="10">No attendance found for selected filters.</td></tr>`;
 }
@@ -1153,7 +1168,7 @@ function download(filename, content, type) {
 
 function exportExcel() {
   const rows = [
-    ["Date", "Time", "Emp. ID", "Name", "Dept.", "Current Process", "Skill Level", "DOJ", "Issued Date", "Renew Date", "Line", "Shift", "Line Leader", "Leader Login", "Entry Source"]
+    ["Date", "Time", "Emp. ID", "Name", "Deployed Dept.", "Deployed Line", "Home Dept.", "Home Line", "Current Process", "Skill Level", "DOJ", "Issued Date", "Renew Date", "Shift", "Line Leader", "Leader Login", "Count Status", "Entry Source"]
   ];
   scopedAttendance().forEach((record) => {
     rows.push([
@@ -1162,15 +1177,18 @@ function exportExcel() {
       record.code,
       record.name,
       record.department,
+      record.line,
+      record.homeDepartment || record.department,
+      record.homeLine || record.line,
       record.currentProcess || record.skill,
       record.skillLevel || "",
       record.doj || "",
       record.issuedDate || "",
       record.renewDate || "",
-      record.line,
       record.shift,
       record.supervisor,
       record.leaderId || "",
+      record.status || "Present",
       record.source || "Skill Card"
     ]);
   });
@@ -1220,7 +1238,7 @@ function exportBlacklist() {
 
 function exportHistory() {
   const rows = [
-    ["Date", "Time", "Emp. ID", "Name", "Department", "Line", "Shift", "Current Process", "Line Leader", "Leader Login", "Entry Source"]
+    ["Date", "Time", "Emp. ID", "Name", "Deployed Department", "Deployed Line", "Home Department", "Home Line", "Shift", "Current Process", "Line Leader", "Leader Login", "Count Status", "Entry Source"]
   ];
   historyRecords().forEach((record) => {
     rows.push([
@@ -1230,10 +1248,13 @@ function exportHistory() {
       record.name,
       record.department,
       record.line,
+      record.homeDepartment || record.department,
+      record.homeLine || record.line,
       record.shift,
       record.currentProcess || record.skill,
       record.supervisor,
       record.leaderId || "",
+      record.status || "Present",
       record.source || "Skill Card"
     ]);
   });
