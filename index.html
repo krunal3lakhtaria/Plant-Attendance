@@ -312,6 +312,26 @@
             </div>
           </section>
 
+          <section class="panel table-panel" id="adminMasterPanel">
+            <div class="panel-head">
+              <div>
+                <h3>Master</h3>
+                <p>HR reference data for ID-only skill-card scans.</p>
+              </div>
+              <div class="master-actions">
+                <button class="ghost-btn" id="downloadMasterTemplateBtn" type="button">Download Excel CSV Format</button>
+                <label class="file-import">
+                  Upload Master
+                  <input type="file" id="masterFile" accept=".csv,text/csv,.txt">
+                </label>
+              </div>
+            </div>
+            <div class="bulk-master-status" id="masterUploadStatus">
+              Download the format, fill it in Excel, save as CSV, then upload from laptop.
+            </div>
+            <p class="hint">Required columns: emp_id, name, department, line, current_process. Optional: doj, skill_level, issued_date, renew_date.</p>
+          </section>
+
           <section class="panel table-panel">
             <div class="panel-head">
               <div>
@@ -354,14 +374,13 @@
             <div class="panel-head">
               <div>
                 <h3>Scanned Operator Data</h3>
-                <p>Built automatically from skill-card scans.</p>
+                <p>Built from HR master data and skill-card scans.</p>
               </div>
               <button class="ghost-btn hidden-admin-tool" id="sampleBtn" type="button">Load Sample Data</button>
             </div>
             <div class="master-actions hidden-admin-tool">
               <label class="file-import">
                 Import CSV
-                <input type="file" id="masterFile" accept=".csv,text/csv">
               </label>
               <button class="primary-btn" id="addOperatorBtn">Add Operator</button>
             </div>
@@ -374,7 +393,7 @@
               <input id="newDoj" placeholder="DOJ">
               <input id="newSkillLevel" placeholder="Skill Level">
             </div>
-            <p class="hint">Scan each operator skill card once. After that, missed-card ID entry pulls details from this scanned data automatically.</p>
+            <p class="hint">ID-only QR scans pull operator details from HR master data when available. Full-detail QR scans can still update this list automatically.</p>
             <div class="table-wrap">
               <table>
                 <thead>

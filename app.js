@@ -562,6 +562,7 @@ function upsertOperator(operator) {
   } else {
     state.operators.push(operator);
   }
+  updateAttendanceDetails(operator);
 }
 
 function replaceOperators(operators) {
@@ -575,6 +576,41 @@ function replaceOperators(operators) {
     ...removedCodes
   ]);
   state.operators = operators;
+  operators.forEach(updateAttendanceDetails);
+}
+
+function importReferenceOperators(operators) {
+  let added = 0;
+  let updated = 0;
+
+  operators.forEach((operator) => {
+    const existing = findOperatorByCode(operator.code);
+    upsertOperator({ ...operator, detailsPending: false });
+    if (existing) {
+      updated += 1;
+    } else {
+      added += 1;
+    }
+  });
+
+  return { added, updated, total: operators.length };
+}
+
+function updateAttendanceDetails(operator) {
+  if (!operator?.code || !operator.name) return;
+  state.attendance = state.attendance.map((record) => {
+    if (record.code.toLowerCase() !== operator.code.toLowerCase()) return record;
+    return {
+      ...record,
+      name: operator.name || record.name,
+      skill: operator.skill || record.skill,
+      currentProcess: operator.skill || record.currentProcess,
+      doj: operator.doj || record.doj || "",
+      skillLevel: operator.skillLevel || record.skillLevel || "",
+      issuedDate: operator.issuedDate || record.issuedDate || "",
+      renewDate: operator.renewDate || record.renewDate || ""
+    };
+  });
 }
 
 function scanAttendance(text, source = "Skill Card") {
@@ -1068,6 +1104,24 @@ function exportBlacklist() {
   download(`plant-blacklist-${today}.xls`, html, "application/vnd.ms-excel");
 }
 
+function downloadMasterTemplate() {
+  const rows = [
+    ["emp_id", "name", "department", "line", "current_process", "doj", "skill_level", "issued_date", "renew_date"],
+    ["101838", "Pranav Kashinath Patil", "Production", "LPC", "C&C", "30-09-2025", "", "10-07-26", "08-10-26"]
+  ];
+  download(`hr-operator-master-template-${today}.csv`, csvFromRows(rows), "text/csv;charset=utf-8");
+}
+
+function csvFromRows(rows) {
+  const csv = rows.map((row) => row.map(csvCell).join(",")).join("\n");
+  return `\uFEFF${csv}\n`;
+}
+
+function csvCell(value) {
+  const clean = String(value ?? "");
+  return /[",\n\r]/.test(clean) ? `"${clean.replace(/"/g, '""')}"` : clean;
+}
+
 function parseCsv(text) {
   const rows = [];
   let row = [];
@@ -1100,6 +1154,55 @@ function parseCsv(text) {
   row.push(cell.trim());
   if (row.some(Boolean)) rows.push(row);
   return rows.filter((item) => item.length >= 5 && item[0]);
+}
+
+function operatorsFromMasterRows(rows) {
+  if (!rows.length) return [];
+  const header = rows[0].map(normalizeFieldName);
+  const hasHeader = header.some((cell) => ["empid", "code", "employeeid"].includes(cell))
+    && header.some((cell) => ["name", "operatorname", "nameofoperator"].includes(cell));
+  const dataRows = hasHeader ? rows.slice(1) : rows;
+
+  return dataRows
+    .map((row) => hasHeader ? operatorFromHeaderRow(row, header) : operatorFromOrderedRow(row))
+    .filter(Boolean);
+}
+
+function operatorFromHeaderRow(row, header) {
+  const fields = Object.fromEntries(header.map((key, index) => [key, row[index] || ""]));
+  return normalizeReferenceOperator({
+    code: readScannedField(fields, ["empid", "code", "employeeid", "operatorid", "id"]),
+    name: readScannedField(fields, ["name", "operatorname", "nameofoperator"]),
+    department: readScannedField(fields, ["department", "dept", "deptname"]),
+    line: readScannedField(fields, ["line", "linename"]),
+    skill: readScannedField(fields, ["currentprocess", "process", "skill"]),
+    doj: readScannedField(fields, ["doj", "dateofjoining"]),
+    skillLevel: readScannedField(fields, ["skilllevel", "level"]),
+    issuedDate: readScannedField(fields, ["issueddate", "issuedate", "issued"]),
+    renewDate: readScannedField(fields, ["renewdate", "renewaldate", "renew"])
+  });
+}
+
+function operatorFromOrderedRow([code, name, department, line, skill, doj = "", skillLevel = "", issuedDate = "", renewDate = ""]) {
+  return normalizeReferenceOperator({ code, name, department, line, skill, doj, skillLevel, issuedDate, renewDate });
+}
+
+function normalizeReferenceOperator(operator) {
+  const splitContext = splitDepartmentLine(operator.department, operator.line);
+  const cleanOperator = {
+    code: cleanScannedValue(operator.code),
+    name: cleanScannedValue(operator.name),
+    department: splitContext.department,
+    line: splitContext.line,
+    skill: cleanScannedValue(operator.skill) || "Not specified",
+    doj: cleanScannedValue(operator.doj),
+    skillLevel: cleanScannedValue(operator.skillLevel),
+    issuedDate: cleanScannedValue(operator.issuedDate),
+    renewDate: cleanScannedValue(operator.renewDate),
+    detailsPending: false
+  };
+  if (!cleanOperator.code || !cleanOperator.name || !cleanOperator.department || !cleanOperator.line) return null;
+  return cleanOperator;
 }
 
 function setActiveView(view) {
@@ -1237,6 +1340,7 @@ $("queryInput").addEventListener("keydown", (event) => {
 });
 $("queryShift").addEventListener("change", () => renderQueryResult());
 $("downloadBlacklistBtn").addEventListener("click", exportBlacklist);
+$("downloadMasterTemplateBtn").addEventListener("click", downloadMasterTemplate);
 
 $("attendanceRows").addEventListener("click", (event) => {
   const id = event.target.dataset.remove;
@@ -1293,25 +1397,24 @@ $("addOperatorBtn").addEventListener("click", () => {
 $("masterFile").addEventListener("change", async (event) => {
   const file = event.target.files[0];
   if (!file) return;
+
   const rows = parseCsv(await file.text());
-  const firstHeader = rows[0]?.[0]?.toLowerCase();
-  const hasHeader = firstHeader === "code" || firstHeader === "emp_id";
-  const dataRows = hasHeader ? rows.slice(1) : rows;
-  const importedOperators = dataRows.map(([code, name, department, line, skill, doj = "", skillLevel = "", issuedDate = "", renewDate = ""]) => ({
-    code,
-    name,
-    department,
-    line,
-    skill,
-    doj,
-    skillLevel,
-    issuedDate,
-    renewDate
-  }));
-  replaceOperators(importedOperators);
+  const importedOperators = operatorsFromMasterRows(rows);
+  if (!importedOperators.length) {
+    $("masterUploadStatus").textContent = "No valid rows found. Keep emp_id, name, department and line filled.";
+    event.target.value = "";
+    showToast("Master upload needs valid operator rows.");
+    return;
+  }
+
+  const result = importReferenceOperators(importedOperators);
   saveState();
   refreshFilters();
-  showToast(`${state.operators.length} operators imported.`);
+  renderAll();
+  $("masterUploadStatus").textContent =
+    `${result.total} rows processed: ${result.added} added, ${result.updated} updated. ID-only scans can now use these details.`;
+  event.target.value = "";
+  showToast(`${result.total} master records uploaded.`);
 });
 
 $("addUserBtn").addEventListener("click", () => {
