@@ -72,8 +72,8 @@
           <button class="nav-tab" data-view="blacklist" title="Absenteeism check">
             <span>Blacklist</span>
           </button>
-          <button class="nav-tab" data-view="master" title="Scanned operator data">
-            <span>Scanned</span>
+          <button class="nav-tab" data-view="master" title="HR master data">
+            <span>Master</span>
           </button>
         </nav>
 
@@ -392,26 +392,6 @@
             </div>
           </section>
 
-          <section class="panel table-panel" id="adminMasterPanel">
-            <div class="panel-head">
-              <div>
-                <h3>Master</h3>
-                <p>HR reference data for ID-only skill-card scans.</p>
-              </div>
-              <div class="master-actions">
-                <button class="ghost-btn" id="downloadMasterTemplateBtn" type="button">Download Excel CSV Format</button>
-                <label class="file-import">
-                  Upload Master
-                  <input type="file" id="masterFile" accept=".csv,text/csv,.txt">
-                </label>
-              </div>
-            </div>
-            <div class="bulk-master-status" id="masterUploadStatus">
-              Download the format, fill it in Excel, save as CSV, then upload from laptop.
-            </div>
-            <p class="hint">Required columns: emp_id, name, department, line, current_process. Optional: doj, skill_level, issued_date, renew_date.</p>
-          </section>
-
           <section class="panel table-panel">
             <div class="panel-head">
               <div>
@@ -453,10 +433,35 @@
           <section class="panel">
             <div class="panel-head">
               <div>
-                <h3>Scanned Operator Data</h3>
-                <p>Built from HR master data and skill-card scans.</p>
+                <h3>Master Data</h3>
+                <p>Upload HR reference data for fast ID-only skill-card scans.</p>
+              </div>
+              <div class="master-actions">
+                <button class="ghost-btn" id="downloadMasterTemplateBtn" type="button">Download Excel CSV Format</button>
+                <label class="file-import">
+                  Upload Master
+                  <input type="file" id="masterFile" accept=".csv,text/csv,.txt">
+                </label>
               </div>
               <button class="ghost-btn hidden-admin-tool" id="sampleBtn" type="button">Load Sample Data</button>
+            </div>
+            <div class="bulk-master-status" id="masterUploadStatus">
+              Download the format, fill it in Excel, save as CSV, then upload from laptop.
+            </div>
+            <p class="hint">Required columns: emp_id, name, department, line, current_process. Optional: doj, skill_level, issued_date, renew_date.</p>
+            <div class="master-toolbar">
+              <div class="metric compact-master-metric">
+                <span>Total Operators</span>
+                <strong id="masterTotal">0</strong>
+              </div>
+              <div class="metric compact-master-metric">
+                <span>Details Pending</span>
+                <strong id="masterPending">0</strong>
+              </div>
+              <label>
+                Search Master
+                <input id="masterSearch" placeholder="Emp. ID, name, department or line">
+              </label>
             </div>
             <div class="master-actions hidden-admin-tool">
               <label class="file-import">
@@ -473,7 +478,7 @@
               <input id="newDoj" placeholder="DOJ">
               <input id="newSkillLevel" placeholder="Skill Level">
             </div>
-            <p class="hint">ID-only QR scans pull operator details from HR master data when available. Full-detail QR scans can still update this list automatically.</p>
+            <p class="hint">ID-only QR scans pull operator details from this HR master when available. Full-detail QR scans can still update this list automatically.</p>
             <div class="table-wrap">
               <table>
                 <thead>

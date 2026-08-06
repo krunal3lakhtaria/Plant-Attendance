@@ -537,6 +537,23 @@ tr:last-child td {
   margin-bottom: 12px;
 }
 
+.master-toolbar {
+  display: grid;
+  grid-template-columns: 180px 180px minmax(240px, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  margin-bottom: 14px;
+}
+
+.compact-master-metric {
+  min-height: 74px;
+  margin-bottom: 0;
+}
+
+.compact-master-metric strong {
+  font-size: 26px;
+}
+
 .bulk-master-status {
   margin-bottom: 10px;
   padding: 12px 14px;
@@ -694,7 +711,7 @@ tr:last-child td {
     padding-inline: 18px;
   }
 
-  .toolbar, .history-toolbar, .scan-grid, .admin-grid, .operator-form, .login-create, .query-line {
+  .toolbar, .history-toolbar, .master-toolbar, .scan-grid, .admin-grid, .operator-form, .login-create, .query-line {
     grid-template-columns: 1fr 1fr;
   }
 }
@@ -709,7 +726,7 @@ tr:last-child td {
     flex-direction: column;
   }
 
-  .toolbar, .history-toolbar, .scan-grid, .admin-grid, .operator-form, .login-create, .query-line, .metrics {
+  .toolbar, .history-toolbar, .master-toolbar, .scan-grid, .admin-grid, .operator-form, .login-create, .query-line, .metrics {
     grid-template-columns: 1fr;
   }
 

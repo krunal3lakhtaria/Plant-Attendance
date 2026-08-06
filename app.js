@@ -1068,7 +1068,18 @@ function renderHistory() {
 }
 
 function renderMaster() {
-  $("masterRows").innerHTML = state.operators.map((op) => `
+  const search = $("masterSearch").value.trim().toLowerCase();
+  const operators = state.operators
+    .filter((op) => {
+      if (!search) return true;
+      return [op.code, op.name, op.skill, op.department, op.line]
+        .some((value) => String(value || "").toLowerCase().includes(search));
+    })
+    .sort((a, b) => String(a.code).localeCompare(String(b.code), undefined, { numeric: true }));
+
+  $("masterTotal").textContent = state.operators.length;
+  $("masterPending").textContent = state.operators.filter((op) => op.detailsPending).length;
+  $("masterRows").innerHTML = operators.map((op) => `
     <tr>
       <td>${escapeHtml(op.code)}</td>
       <td>${escapeHtml(op.name)}</td>
@@ -1078,7 +1089,7 @@ function renderMaster() {
       <td>${escapeHtml(op.doj || "")}</td>
       <td>${escapeHtml(op.skillLevel || "")}</td>
     </tr>
-  `).join("") || `<tr><td colspan="7">No skill cards scanned yet.</td></tr>`;
+  `).join("") || `<tr><td colspan="7">No matching master records found.</td></tr>`;
 }
 
 function renderUsers() {
@@ -1478,6 +1489,7 @@ $("historyDepartmentSelect").addEventListener("change", () => refreshHistoryLine
   $(id).addEventListener("change", renderAll);
 });
 $("historySearch").addEventListener("input", renderAll);
+$("masterSearch").addEventListener("input", renderAll);
 
 $("attendanceRows").addEventListener("click", (event) => {
   const id = event.target.dataset.remove;
