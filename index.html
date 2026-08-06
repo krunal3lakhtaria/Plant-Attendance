@@ -66,6 +66,9 @@
           <button class="nav-tab" data-view="admin" title="Admin dashboard">
             <span>Admin</span>
           </button>
+          <button class="nav-tab" data-view="history" title="Backdated attendance">
+            <span>History</span>
+          </button>
           <button class="nav-tab" data-view="blacklist" title="Absenteeism check">
             <span>Blacklist</span>
           </button>
@@ -204,6 +207,83 @@
                   </tr>
                 </thead>
                 <tbody id="attendanceRows"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="historyView">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Backdated Attendance</h3>
+                <p>Search saved attendance by date, department, line, shift or employee.</p>
+              </div>
+              <button class="ghost-btn" id="downloadHistoryBtn">Download History</button>
+            </div>
+            <div class="history-toolbar">
+              <label>
+                From
+                <input type="date" id="historyFromDate">
+              </label>
+              <label>
+                To
+                <input type="date" id="historyToDate">
+              </label>
+              <label>
+                Department
+                <select id="historyDepartmentSelect"></select>
+              </label>
+              <label>
+                Line
+                <select id="historyLineSelect"></select>
+              </label>
+              <label>
+                Shift
+                <select id="historyShiftSelect">
+                  <option value="all">All Shifts</option>
+                  <option>A</option>
+                  <option>B</option>
+                  <option>C</option>
+                  <option>General</option>
+                </select>
+              </label>
+              <label>
+                Search
+                <input id="historySearch" placeholder="Emp. ID or name">
+              </label>
+            </div>
+            <div class="metrics wide">
+              <div class="metric"><span>Total Present</span><strong id="historyTotal">0</strong></div>
+              <div class="metric"><span>Days Found</span><strong id="historyDays">0</strong></div>
+              <div class="metric"><span>Line Sessions</span><strong id="historyLines">0</strong></div>
+            </div>
+          </section>
+
+          <section class="panel table-panel">
+            <div class="panel-head">
+              <div>
+                <h3>Attendance Records</h3>
+                <p>Latest saved records appear first.</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Emp. ID</th>
+                    <th>Name</th>
+                    <th>Department</th>
+                    <th>Line</th>
+                    <th>Shift</th>
+                    <th>Process</th>
+                    <th>Line Leader</th>
+                    <th>Source</th>
+                  </tr>
+                </thead>
+                <tbody id="historyRows"></tbody>
               </table>
             </div>
           </section>
