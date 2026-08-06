@@ -64,7 +64,7 @@ function localDate(date = new Date()) {
 
 function normalizeState(parsed = {}) {
   return {
-    operators: Array.isArray(parsed.operators) ? parsed.operators : sampleOperators,
+    operators: Array.isArray(parsed.operators) ? parsed.operators : [],
     attendance: Array.isArray(parsed.attendance) ? parsed.attendance : [],
     users: Array.isArray(parsed.users) ? parsed.users : defaultUsers,
     deletedAttendanceIds: Array.isArray(parsed.deletedAttendanceIds) ? parsed.deletedAttendanceIds : [],
@@ -279,6 +279,16 @@ function fillSelect(select, values) {
   if (values.includes(previous)) select.value = previous;
 }
 
+function currentContextFallback() {
+  const department = currentUser?.role === "supervisor"
+    ? currentUser.department
+    : $("departmentSelect").value;
+  const line = currentUser?.role === "supervisor"
+    ? currentUser.line
+    : $("lineSelect").value;
+  return { department, line };
+}
+
 function refreshFilters() {
   const departments = currentUser?.role === "supervisor"
     ? [currentUser.department]
@@ -299,16 +309,110 @@ function refreshLines() {
 function parseCardText(text) {
   const clean = text.trim();
   if (!clean) return null;
-  const parts = clean.split("|").map((part) => part.trim());
+  const existingOperator = findOperatorByCode(clean);
+  if (existingOperator) return existingOperator;
+
+  const scannedOperator = operatorFromScannedText(clean);
+  if (!scannedOperator) return null;
+
+  upsertOperator(scannedOperator);
+  return scannedOperator;
+}
+
+function findOperatorByCode(code) {
+  const clean = String(code || "").trim().toLowerCase();
+  if (!clean) return null;
+  return state.operators.find((op) => op.code.toLowerCase() === clean) || null;
+}
+
+function operatorFromScannedText(text) {
+  return operatorFromJson(text)
+    || operatorFromKeyValueText(text)
+    || operatorFromPipeText(text);
+}
+
+function operatorFromJson(text) {
+  if (!text.startsWith("{")) return null;
+  try {
+    return normalizeScannedOperator(JSON.parse(text));
+  } catch {
+    return null;
+  }
+}
+
+function operatorFromPipeText(text) {
+  const parts = text.split("|").map((part) => part.trim());
 
   if (parts.length >= 5) {
     const [code, name, skill, department, line, doj = "", skillLevel = "", issuedDate = "", renewDate = ""] = parts;
-    const operator = { code, name, skill, department, line, doj, skillLevel, issuedDate, renewDate };
-    upsertOperator(operator);
-    return operator;
+    return normalizeScannedOperator({ code, name, skill, department, line, doj, skillLevel, issuedDate, renewDate });
   }
 
-  return state.operators.find((op) => op.code.toLowerCase() === clean.toLowerCase()) || null;
+  return null;
+}
+
+function operatorFromKeyValueText(text) {
+  const fields = {};
+  text
+    .split(/\n|;|\|/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .forEach((line) => {
+      const match = line.match(/^([^:=]+)\s*[:=]\s*(.+)$/);
+      if (!match) return;
+      fields[normalizeFieldName(match[1])] = match[2].trim();
+    });
+
+  if (!Object.keys(fields).length) return null;
+  return normalizeScannedOperator(fields);
+}
+
+function normalizeFieldName(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function readScannedField(source, names) {
+  for (const name of names) {
+    const direct = source[name];
+    const normalized = source[normalizeFieldName(name)];
+    if (direct || normalized) return String(direct || normalized).trim();
+  }
+  return "";
+}
+
+function normalizeScannedOperator(source = {}) {
+  const readableSource = normalizeScannedFields(source);
+  const fallback = currentContextFallback();
+  const code = readScannedField(readableSource, ["code", "empId", "emp_id", "employeeId", "employee_id", "empid", "operatorId", "operator_id", "id"]);
+  if (!code) return null;
+
+  const name = readScannedField(readableSource, ["name", "operatorName", "operator_name", "nameofoperator", "nameOfOperator"]);
+  const skill = readScannedField(readableSource, ["skill", "currentProcess", "current_process", "process", "currentprocess"]);
+  const department = readScannedField(readableSource, ["department", "dept", "dept.", "deptname"]) || fallback.department;
+  const line = readScannedField(readableSource, ["line", "lineName", "line_name"]) || fallback.line;
+
+  if (!name || !department || !line) return null;
+  return {
+    code,
+    name,
+    skill: skill || "Not specified",
+    department,
+    line,
+    doj: readScannedField(readableSource, ["doj", "dateOfJoining", "date_of_joining"]),
+    skillLevel: readScannedField(readableSource, ["skillLevel", "skill_level", "level"]),
+    issuedDate: readScannedField(readableSource, ["issuedDate", "issued_date", "issueDate", "issue_date"]),
+    renewDate: readScannedField(readableSource, ["renewDate", "renew_date", "renewalDate", "renewal_date"])
+  };
+}
+
+function normalizeScannedFields(source) {
+  return Object.entries(source || {}).reduce((fields, [key, value]) => {
+    fields[key] = value;
+    fields[normalizeFieldName(key)] = value;
+    return fields;
+  }, {});
 }
 
 function upsertOperator(operator) {
@@ -344,7 +448,7 @@ function scanAttendance(text, source = "Skill Card") {
 
   const operator = parseCardText(clean);
   if (!operator) {
-    showToast("ID not found in master. Ask admin to add/import this operator first.");
+    showToast("ID not learned yet. Scan full skill card once, then missed-card ID entry will work.");
     return;
   }
 
@@ -400,22 +504,43 @@ async function toggleCamera() {
     return;
   }
 
-  if (!("BarcodeDetector" in window)) {
-    showToast("Camera scanning is not supported here. Use a USB scanner or ID entry.");
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setCameraMessage("Camera not available", cameraHelpText("unsupported"));
+    showToast("Camera is not available in this browser.");
     return;
   }
 
+  if (!window.isSecureContext) {
+    setCameraMessage("Open secure app link", cameraHelpText("insecure"));
+    showToast("Open the HTTPS app link to allow camera access.");
+    return;
+  }
+
+  $("cameraBtn").textContent = "Allow Camera";
+  setCameraMessage("Camera permission required", cameraHelpText("request"));
+
   try {
-    detector = new BarcodeDetector({ formats: ["qr_code", "code_128", "code_39", "ean_13"] });
     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    if (!("BarcodeDetector" in window)) {
+      stopCamera();
+      setCameraMessage("Camera allowed", cameraHelpText("noDetector"));
+      showToast("Camera allowed. This browser cannot auto-read QR; use scanner/manual ID.");
+      return;
+    }
+
+    detector = new BarcodeDetector({ formats: ["qr_code", "code_128", "code_39", "ean_13"] });
     $("scannerVideo").srcObject = stream;
     await $("scannerVideo").play();
     $("cameraEmpty").classList.add("hidden");
     $("cameraBtn").textContent = "Stop Camera";
     scanning = true;
     scanLoop();
-  } catch {
-    showToast("Camera permission was blocked or no camera is available.");
+  } catch (error) {
+    if (stream) stopCamera();
+    setCameraMessage("Camera access blocked", cameraHelpText(error?.name || "blocked"));
+    showToast("Camera blocked. Allow camera in browser settings, then try again.");
+  } finally {
+    if (!stream) $("cameraBtn").textContent = "Start Camera";
   }
 }
 
@@ -426,6 +551,24 @@ function stopCamera() {
   $("scannerVideo").srcObject = null;
   $("cameraEmpty").classList.remove("hidden");
   $("cameraBtn").textContent = "Start Camera";
+}
+
+function setCameraMessage(title, detail) {
+  $("cameraEmpty").classList.remove("hidden");
+  $("cameraEmpty").innerHTML = `<strong>${escapeHtml(title)}</strong><span>${escapeHtml(detail)}</span>`;
+}
+
+function cameraHelpText(reason) {
+  if (reason === "request") return "Tap Allow when your phone asks for camera permission.";
+  if (reason === "insecure") return "Camera works only on the HTTPS Vercel link, not the local file preview.";
+  if (reason === "noDetector") return "Use a browser with barcode scanning support, or use USB scanner / missed-card ID entry after one full scan.";
+  if (isIosDevice()) return "On iPhone, open Settings > Safari or Apps > Safari > Camera, choose Allow, then reopen this app.";
+  return "Allow camera permission for this site in browser settings, then press Start Camera again.";
+}
+
+function isIosDevice() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 }
 
 async function scanLoop() {
@@ -556,7 +699,7 @@ function renderQueryResult(operatorCode = $("queryInput").value.trim()) {
 
   const operator = state.operators.find((op) => op.code.toLowerCase() === code.toLowerCase());
   if (!operator) {
-    $("queryResult").innerHTML = `<strong>Emp. ID not found</strong><br><span>${escapeHtml(code)} is not available in master data.</span>`;
+    $("queryResult").innerHTML = `<strong>Emp. ID not found</strong><br><span>${escapeHtml(code)} is not available in scanned data yet.</span>`;
     return;
   }
 
@@ -645,7 +788,7 @@ function renderMaster() {
       <td>${escapeHtml(op.doj || "")}</td>
       <td>${escapeHtml(op.skillLevel || "")}</td>
     </tr>
-  `).join("");
+  `).join("") || `<tr><td colspan="7">No skill cards scanned yet.</td></tr>`;
 }
 
 function renderUsers() {

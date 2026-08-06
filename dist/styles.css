@@ -325,10 +325,27 @@ video {
   position: absolute;
   inset: 0;
   display: grid;
+  gap: 8px;
   place-items: center;
+  align-content: center;
+  padding: 18px;
+  text-align: center;
   color: #c9dadd;
   background: linear-gradient(135deg, rgba(16, 39, 45, .96), rgba(28, 70, 76, .96));
   font-weight: 800;
+}
+
+.camera-empty strong {
+  color: #ffffff;
+  font-size: 18px;
+}
+
+.camera-empty span {
+  max-width: 420px;
+  color: #c9dadd;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.45;
 }
 
 .camera-empty.hidden {
@@ -537,6 +554,10 @@ tr:last-child td {
 
 .hint {
   margin-bottom: 14px;
+}
+
+.hidden-admin-tool {
+  display: none !important;
 }
 
 .toast {

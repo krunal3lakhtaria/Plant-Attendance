@@ -69,8 +69,8 @@
           <button class="nav-tab" data-view="blacklist" title="Absenteeism check">
             <span>Blacklist</span>
           </button>
-          <button class="nav-tab" data-view="master" title="Operator master">
-            <span>Master</span>
+          <button class="nav-tab" data-view="master" title="Scanned operator data">
+            <span>Scanned</span>
           </button>
         </nav>
 
@@ -146,7 +146,7 @@
               </div>
 
               <div class="quick-entry">
-                <input id="scanInput" placeholder="Scanner ready for Emp. ID">
+                <input id="scanInput" placeholder="Scan full skill card or enter missed Emp. ID">
                 <button class="primary-btn" id="missedCardBtn">Missed Card ID</button>
                 <button class="ghost-btn" id="queryFromScanBtn">Query</button>
               </div>
@@ -353,19 +353,19 @@
           <section class="panel">
             <div class="panel-head">
               <div>
-                <h3>Operator Master</h3>
-                <p>Import your employee list or add operators manually.</p>
+                <h3>Scanned Operator Data</h3>
+                <p>Built automatically from skill-card scans.</p>
               </div>
-              <button class="ghost-btn" id="sampleBtn">Load Sample Master</button>
+              <button class="ghost-btn hidden-admin-tool" id="sampleBtn" type="button">Load Sample Data</button>
             </div>
-            <div class="master-actions">
+            <div class="master-actions hidden-admin-tool">
               <label class="file-import">
                 Import CSV
                 <input type="file" id="masterFile" accept=".csv,text/csv">
               </label>
               <button class="primary-btn" id="addOperatorBtn">Add Operator</button>
             </div>
-            <div class="operator-form">
+            <div class="operator-form hidden-admin-tool">
               <input id="newCode" placeholder="Emp. ID">
               <input id="newName" placeholder="Name">
               <input id="newSkill" placeholder="Current Process">
@@ -374,7 +374,7 @@
               <input id="newDoj" placeholder="DOJ">
               <input id="newSkillLevel" placeholder="Skill Level">
             </div>
-            <p class="hint">CSV columns: emp_id, name, department, line, current_process, doj, skill_level, issued_date, renew_date. Your sample QR decodes to Emp. ID only, so details are pulled from master data.</p>
+            <p class="hint">Scan each operator skill card once. After that, missed-card ID entry pulls details from this scanned data automatically.</p>
             <div class="table-wrap">
               <table>
                 <thead>
