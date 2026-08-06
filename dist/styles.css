@@ -530,6 +530,18 @@ tr:last-child td {
   margin-bottom: 12px;
 }
 
+.bulk-master-status {
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  color: #45545c;
+  background: #f7fafb;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .file-import {
   display: inline-flex;
   align-items: center;
