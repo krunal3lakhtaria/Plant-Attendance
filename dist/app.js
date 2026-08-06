@@ -50,6 +50,8 @@ const $ = (id) => document.getElementById(id);
 const today = localDate();
 
 $("attendanceDate").value = today;
+$("historyToDate").value = today;
+$("historyFromDate").value = localDate(addDays(new Date(), -30));
 $("todayLabel").textContent = new Date().toLocaleDateString(undefined, {
   weekday: "short",
   day: "2-digit",
@@ -60,6 +62,12 @@ $("todayLabel").textContent = new Date().toLocaleDateString(undefined, {
 function localDate(date = new Date()) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
   return local.toISOString().slice(0, 10);
+}
+
+function addDays(date, days) {
+  const copy = new Date(date);
+  copy.setDate(copy.getDate() + days);
+  return copy;
 }
 
 function normalizeState(parsed = {}) {
@@ -231,7 +239,7 @@ function groupKey(record) {
 function userCan(view) {
   if (!currentUser) return false;
   if (currentUser.role === "admin") return true;
-  return view === "supervisor" || view === "blacklist";
+  return view === "supervisor" || view === "history" || view === "blacklist";
 }
 
 function selectedContext() {
@@ -283,6 +291,22 @@ function fillSelect(select, values) {
   if (values.includes(previous)) select.value = previous;
 }
 
+function fillSelectWithAll(select, values, allLabel = "All") {
+  const previous = select.value;
+  select.innerHTML = "";
+  const allOption = document.createElement("option");
+  allOption.value = "all";
+  allOption.textContent = allLabel;
+  select.appendChild(allOption);
+  values.forEach((value) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    select.appendChild(option);
+  });
+  select.value = previous === "all" || values.includes(previous) ? previous : "all";
+}
+
 function currentContextFallback() {
   const department = currentUser?.role === "supervisor"
     ? currentUser.department
@@ -298,6 +322,7 @@ function refreshFilters() {
     ? [currentUser.department]
     : unique(state.operators.map((op) => op.department));
   fillSelect($("departmentSelect"), departments);
+  refreshHistoryFilters();
   refreshLines();
 }
 
@@ -308,6 +333,37 @@ function refreshLines() {
     : unique(state.operators.filter((op) => !dept || op.department === dept).map((op) => op.line));
   fillSelect($("lineSelect"), lines);
   renderAll();
+}
+
+function refreshHistoryFilters() {
+  if (currentUser?.role === "supervisor") {
+    fillSelect($("historyDepartmentSelect"), [currentUser.department]);
+    fillSelect($("historyLineSelect"), [currentUser.line]);
+    $("historyDepartmentSelect").disabled = true;
+    $("historyLineSelect").disabled = true;
+    return;
+  }
+
+  $("historyDepartmentSelect").disabled = false;
+  $("historyLineSelect").disabled = false;
+  const records = scopedAttendance();
+  fillSelectWithAll($("historyDepartmentSelect"), unique(records.map((record) => record.department)), "All Departments");
+  refreshHistoryLines(false);
+}
+
+function refreshHistoryLines(shouldRender = true) {
+  if (currentUser?.role === "supervisor") {
+    fillSelect($("historyLineSelect"), [currentUser.line]);
+    if (shouldRender) renderAll();
+    return;
+  }
+
+  const department = $("historyDepartmentSelect").value;
+  const records = scopedAttendance().filter((record) =>
+    department === "all" || record.department === department
+  );
+  fillSelectWithAll($("historyLineSelect"), unique(records.map((record) => record.line)), "All Lines");
+  if (shouldRender) renderAll();
 }
 
 function parseCardText(text) {
@@ -965,6 +1021,52 @@ function renderBlacklist() {
   `).join("") || `<tr><td colspan="8">No one is above 20% absenteeism for recorded line sessions.</td></tr>`;
 }
 
+function historyRecords() {
+  const fromDate = $("historyFromDate").value || "0000-01-01";
+  const toDate = $("historyToDate").value || "9999-12-31";
+  const department = $("historyDepartmentSelect").value || "all";
+  const line = $("historyLineSelect").value || "all";
+  const shift = $("historyShiftSelect").value || "all";
+  const search = $("historySearch").value.trim().toLowerCase();
+
+  return scopedAttendance()
+    .filter((record) => record.date >= fromDate && record.date <= toDate)
+    .filter((record) => department === "all" || record.department === department)
+    .filter((record) => line === "all" || record.line === line)
+    .filter((record) => shift === "all" || record.shift === shift)
+    .filter((record) => {
+      if (!search) return true;
+      return [record.code, record.name, record.skill, record.currentProcess]
+        .some((value) => String(value || "").toLowerCase().includes(search));
+    })
+    .sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
+}
+
+function renderHistory() {
+  const records = historyRecords();
+  const days = new Set(records.map((record) => record.date));
+  const lines = new Set(records.map((record) => groupKey(record)));
+
+  $("historyTotal").textContent = records.length;
+  $("historyDays").textContent = days.size;
+  $("historyLines").textContent = lines.size;
+
+  $("historyRows").innerHTML = records.map((record) => `
+    <tr>
+      <td>${escapeHtml(record.date)}</td>
+      <td>${escapeHtml(record.time)}</td>
+      <td>${escapeHtml(record.code)}</td>
+      <td>${escapeHtml(record.name)}</td>
+      <td>${escapeHtml(record.department)}</td>
+      <td>${escapeHtml(record.line)}</td>
+      <td>${escapeHtml(record.shift)}</td>
+      <td>${escapeHtml(record.currentProcess || record.skill)}</td>
+      <td>${escapeHtml(record.supervisor)}</td>
+      <td><span class="status present">${escapeHtml(record.source || record.status)}</span></td>
+    </tr>
+  `).join("") || `<tr><td colspan="10">No attendance found for selected filters.</td></tr>`;
+}
+
 function renderMaster() {
   $("masterRows").innerHTML = state.operators.map((op) => `
     <tr>
@@ -1002,6 +1104,7 @@ function canRemoveUser(user, adminCount = state.users.filter((item) => item.role
 function renderAll() {
   renderAttendance();
   renderAdmin();
+  renderHistory();
   renderBlacklist();
   renderMaster();
   renderUsers();
@@ -1102,6 +1205,34 @@ function exportBlacklist() {
     </body></html>
   `;
   download(`plant-blacklist-${today}.xls`, html, "application/vnd.ms-excel");
+}
+
+function exportHistory() {
+  const rows = [
+    ["Date", "Time", "Emp. ID", "Name", "Department", "Line", "Shift", "Current Process", "Line Leader", "Leader Login", "Entry Source"]
+  ];
+  historyRecords().forEach((record) => {
+    rows.push([
+      record.date,
+      record.time,
+      record.code,
+      record.name,
+      record.department,
+      record.line,
+      record.shift,
+      record.currentProcess || record.skill,
+      record.supervisor,
+      record.leaderId || "",
+      record.source || "Skill Card"
+    ]);
+  });
+
+  const html = `
+    <html><head><meta charset="utf-8"></head><body>
+      <table>${rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("")}</table>
+    </body></html>
+  `;
+  download(`plant-attendance-history-${today}.xls`, html, "application/vnd.ms-excel");
 }
 
 function downloadMasterTemplate() {
@@ -1341,6 +1472,12 @@ $("queryInput").addEventListener("keydown", (event) => {
 $("queryShift").addEventListener("change", () => renderQueryResult());
 $("downloadBlacklistBtn").addEventListener("click", exportBlacklist);
 $("downloadMasterTemplateBtn").addEventListener("click", downloadMasterTemplate);
+$("downloadHistoryBtn").addEventListener("click", exportHistory);
+$("historyDepartmentSelect").addEventListener("change", () => refreshHistoryLines());
+["historyFromDate", "historyToDate", "historyLineSelect", "historyShiftSelect"].forEach((id) => {
+  $(id).addEventListener("change", renderAll);
+});
+$("historySearch").addEventListener("input", renderAll);
 
 $("attendanceRows").addEventListener("click", (event) => {
   const id = event.target.dataset.remove;
