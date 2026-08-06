@@ -256,6 +256,10 @@ function selectedContext() {
   };
 }
 
+function hasLineContext(context) {
+  return Boolean(context.department && context.line);
+}
+
 function showToast(message) {
   const toast = $("toast");
   toast.textContent = message;
@@ -309,14 +313,17 @@ function refreshLines() {
 function parseCardText(text) {
   const clean = text.trim();
   if (!clean) return null;
+
+  const scannedOperator = operatorFromScannedText(clean);
+  if (scannedOperator) {
+    upsertOperator(scannedOperator);
+    return scannedOperator;
+  }
+
   const existingOperator = findOperatorByCode(clean);
   if (existingOperator) return existingOperator;
 
-  const scannedOperator = operatorFromScannedText(clean);
-  if (!scannedOperator) return null;
-
-  upsertOperator(scannedOperator);
-  return scannedOperator;
+  return null;
 }
 
 function findOperatorByCode(code) {
@@ -327,7 +334,9 @@ function findOperatorByCode(code) {
 
 function operatorFromScannedText(text) {
   return operatorFromJson(text)
+    || operatorFromUrlText(text)
     || operatorFromKeyValueText(text)
+    || operatorFromCardText(text)
     || operatorFromPipeText(text);
 }
 
@@ -340,12 +349,30 @@ function operatorFromJson(text) {
   }
 }
 
+function operatorFromUrlText(text) {
+  const clean = text.trim();
+  if (!clean.includes("?") && !clean.includes("=")) return null;
+
+  try {
+    const url = new URL(clean.includes("://") ? clean : `https://attendance.local/?${clean.replace(/^\?/, "")}`);
+    const fields = Object.fromEntries(url.searchParams.entries());
+    return Object.keys(fields).length ? normalizeScannedOperator(fields) : null;
+  } catch {
+    return null;
+  }
+}
+
 function operatorFromPipeText(text) {
-  const parts = text.split("|").map((part) => part.trim());
+  const separator = text.includes("|") ? "|" : text.includes("\t") ? "\t" : text.includes(",") ? "," : "";
+  if (!separator) return null;
+  const parts = text.split(separator).map((part) => part.trim()).filter(Boolean);
 
   if (parts.length >= 5) {
-    const [code, name, skill, department, line, doj = "", skillLevel = "", issuedDate = "", renewDate = ""] = parts;
-    return normalizeScannedOperator({ code, name, skill, department, line, doj, skillLevel, issuedDate, renewDate });
+    const [code, name, third, fourth, fifth, doj = "", skillLevel = "", issuedDate = "", renewDate = ""] = parts;
+    return bestScannedOperator([
+      { code, name, skill: third, department: fourth, line: fifth, doj, skillLevel, issuedDate, renewDate },
+      { code, name, department: third, line: fourth, skill: fifth, doj, skillLevel, issuedDate, renewDate }
+    ]);
   }
 
   return null;
@@ -365,6 +392,54 @@ function operatorFromKeyValueText(text) {
 
   if (!Object.keys(fields).length) return null;
   return normalizeScannedOperator(fields);
+}
+
+function operatorFromCardText(text) {
+  const flat = text
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s*-\s*/g, "-")
+    .replace(/\s+/g, " ");
+
+  const code = readCardField(flat, ["Emp. ID", "Emp ID", "Employee ID", "Operator ID"], ["DOJ", "Dept", "Department", "Current Process", "Process", "Issued Date", "Renew Date"]);
+  const name = readCardField(flat, ["Name of Operator", "Operator Name"], ["Emp. ID", "Emp ID", "Employee ID", "DOJ", "Dept", "Department"]);
+  const department = readCardField(flat, ["Dept.", "Dept", "Department"], ["Current Process", "Process", "Issued Date", "Issue Date", "Renew Date", "Skill Level"]);
+  const skill = readCardField(flat, ["Current Process", "Process"], ["Issued Date", "Issue Date", "Renew Date", "Authorised", "Authorized", "Skill Level"]);
+  const doj = readCardField(flat, ["DOJ", "Date of Joining"], ["Dept", "Department", "Current Process", "Process"]);
+  const issuedDate = readCardField(flat, ["Issued Date", "Issue Date"], ["Renew Date", "Skill Level"]);
+  const renewDate = readCardField(flat, ["Renew Date", "Renewal Date"], ["Skill Level", "Authorised", "Authorized"]);
+  const skillLevel = readCardField(flat, ["Skill Level", "Level"], ["Issued Date", "Renew Date", "Authorised", "Authorized"]);
+
+  return normalizeScannedOperator({ code, name, department, skill, doj, issuedDate, renewDate, skillLevel });
+}
+
+function readCardField(text, labels, nextLabels) {
+  for (const label of labels) {
+    const labelPattern = labelToPattern(label);
+    const nextPattern = nextLabels.map(labelToPattern).join("|");
+    const regex = new RegExp(`(?:^|\\b)${labelPattern}\\s*[:=]?\\s*([\\s\\S]*?)(?=\\s+(?:${nextPattern})\\s*[:=]?|$)`, "i");
+    const match = text.match(regex);
+    if (match?.[1]) return cleanScannedValue(match[1]);
+  }
+  return "";
+}
+
+function labelToPattern(label) {
+  return label
+    .trim()
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/\\\./g, "\\.?")
+    .replace(/\s+/g, "\\s+");
+}
+
+function cleanScannedValue(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/^[\s:=-]+|[\s,;]+$/g, "")
+    .trim();
 }
 
 function normalizeFieldName(name) {
@@ -390,8 +465,11 @@ function normalizeScannedOperator(source = {}) {
 
   const name = readScannedField(readableSource, ["name", "operatorName", "operator_name", "nameofoperator", "nameOfOperator"]);
   const skill = readScannedField(readableSource, ["skill", "currentProcess", "current_process", "process", "currentprocess"]);
-  const department = readScannedField(readableSource, ["department", "dept", "dept.", "deptname"]) || fallback.department;
-  const line = readScannedField(readableSource, ["line", "lineName", "line_name"]) || fallback.line;
+  const rawDepartment = readScannedField(readableSource, ["department", "dept", "dept.", "deptname"]);
+  const rawLine = readScannedField(readableSource, ["line", "lineName", "line_name"]);
+  const splitContext = splitDepartmentLine(rawDepartment, rawLine);
+  const department = splitContext.department || fallback.department;
+  const line = splitContext.line || fallback.line;
 
   if (!name || !department || !line) return null;
   return {
@@ -405,6 +483,67 @@ function normalizeScannedOperator(source = {}) {
     issuedDate: readScannedField(readableSource, ["issuedDate", "issued_date", "issueDate", "issue_date"]),
     renewDate: readScannedField(readableSource, ["renewDate", "renew_date", "renewalDate", "renewal_date"])
   };
+}
+
+function operatorFromIdOnlyScan(code, context = selectedContext()) {
+  if (!isIdOnlyScan(code) || !hasLineContext(context)) return null;
+  return {
+    code: String(code).trim(),
+    name: `Emp. ID ${String(code).trim()}`,
+    skill: "Details pending",
+    department: context.department,
+    line: context.line,
+    doj: "",
+    skillLevel: "",
+    issuedDate: "",
+    renewDate: "",
+    detailsPending: true
+  };
+}
+
+function splitDepartmentLine(department, line) {
+  const cleanDepartment = cleanScannedValue(department);
+  const cleanLine = cleanScannedValue(line);
+  if (cleanLine || !cleanDepartment) {
+    return { department: cleanDepartment, line: cleanLine };
+  }
+
+  const separatorMatch = cleanDepartment.match(/^(.+?)[-/](.+)$/);
+  if (!separatorMatch) return { department: cleanDepartment, line: "" };
+
+  const possibleDepartment = cleanScannedValue(separatorMatch[1]);
+  const possibleLine = cleanScannedValue(separatorMatch[2]);
+  if (!possibleDepartment || !possibleLine) return { department: cleanDepartment, line: "" };
+
+  return looksLikeLine(possibleLine)
+    ? { department: possibleDepartment, line: possibleLine }
+    : { department: cleanDepartment, line: "" };
+}
+
+function bestScannedOperator(candidates) {
+  const operators = candidates
+    .map((candidate) => normalizeScannedOperator(candidate))
+    .filter(Boolean)
+    .sort((a, b) => scoreOperatorCandidate(b) - scoreOperatorCandidate(a));
+  return operators[0] || null;
+}
+
+function scoreOperatorCandidate(operator) {
+  let score = 0;
+  if (/^\d{3,}$|^[a-z]*\d{3,}$/i.test(operator.code)) score += 2;
+  if (operator.name && /\s/.test(operator.name)) score += 2;
+  if (looksLikeLine(operator.line)) score += 3;
+  if (operator.department && !looksLikeLine(operator.department)) score += 1;
+  if (operator.skill && !looksLikeLine(operator.skill)) score += 1;
+  return score;
+}
+
+function looksLikeLine(value) {
+  return /\b(line|assembly|cell|station|shop|k\d+|l\d+)\b|^[a-z]+-\w*\d+$|^[A-Z]{2,6}\d*$/i.test(String(value || ""));
+}
+
+function isIdOnlyScan(value) {
+  return /^[a-z]*\d{3,}$/i.test(String(value || "").trim());
 }
 
 function normalizeScannedFields(source) {
@@ -446,9 +585,22 @@ function scanAttendance(text, source = "Skill Card") {
   lastScanValue = clean;
   lastScanAt = now;
 
-  const operator = parseCardText(clean);
+  let scanSource = source;
+  let operator = parseCardText(clean);
+  if (!operator && source !== "Missed Card ID" && isIdOnlyScan(clean)) {
+    operator = operatorFromIdOnlyScan(clean);
+    if (operator) {
+      upsertOperator(operator);
+      scanSource = `${source} - ID only`;
+      showToast("QR has Emp. ID only. Attendance saved; details pending.");
+    }
+  }
+
   if (!operator) {
-    showToast("ID not learned yet. Scan full skill card once, then missed-card ID entry will work.");
+    const message = isIdOnlyScan(clean)
+      ? "ID not learned yet. Scan the card QR on assigned line, or use full-detail QR."
+      : "QR detail not readable. Use labeled QR text with Emp. ID, name, department and line.";
+    showToast(message);
     return;
   }
 
@@ -486,7 +638,7 @@ function scanAttendance(text, source = "Skill Card") {
     shift: context.shift,
     supervisor: context.supervisor,
     leaderId: context.leaderId,
-    source,
+    source: scanSource,
     status: "Present"
   };
 
