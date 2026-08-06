@@ -267,6 +267,13 @@ main {
   margin-bottom: 16px;
 }
 
+.history-toolbar {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(130px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
 label {
   display: grid;
   gap: 6px;
@@ -647,13 +654,14 @@ tr:last-child td {
 
   .nav-tabs {
     grid-column: 1 / -1;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 6px;
   }
 
   .nav-tab {
     min-height: 42px;
-    padding: 9px 8px;
+    padding: 9px 6px;
+    font-size: 14px;
     text-align: center;
   }
 
@@ -686,7 +694,7 @@ tr:last-child td {
     padding-inline: 18px;
   }
 
-  .toolbar, .scan-grid, .admin-grid, .operator-form, .login-create, .query-line {
+  .toolbar, .history-toolbar, .scan-grid, .admin-grid, .operator-form, .login-create, .query-line {
     grid-template-columns: 1fr 1fr;
   }
 }
@@ -701,11 +709,15 @@ tr:last-child td {
     flex-direction: column;
   }
 
-  .toolbar, .scan-grid, .admin-grid, .operator-form, .login-create, .query-line, .metrics {
+  .toolbar, .history-toolbar, .scan-grid, .admin-grid, .operator-form, .login-create, .query-line, .metrics {
     grid-template-columns: 1fr;
   }
 
-  .nav-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .nav-tabs { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+
+  .nav-tab {
+    font-size: 12px;
+  }
 
   .topbar h2 {
     font-size: 24px;
