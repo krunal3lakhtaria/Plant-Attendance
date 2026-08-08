@@ -3,6 +3,7 @@ const SESSION_KEY = "plant-attendance-current-user";
 const SYNC_PENDING_KEY = "plant-attendance-sync-pending";
 const PRODUCTION_ORIGIN = "https://backend-krunal3lakhtaria-3113s-projects.vercel.app";
 const API_BASE = location.protocol === "file:" ? PRODUCTION_ORIGIN : "";
+const ASSEMBLY_DEPARTMENT = "Assembly";
 
 const sampleOperators = [
   ["303408", "Sample Operator", "F/A", "Production", "Assembly-K2", "14-07-2025", "Level 4", "23-04-2026", "22-07-2026"],
@@ -111,12 +112,17 @@ function normalizeDeptTargets(value) {
   const source = Array.isArray(value)
     ? value
     : Object.entries(value || {}).map(([department, target]) => ({ department, target }));
-  return source
+  const targets = source
     .map((item) => ({
-      department: cleanScannedValue(item.department || item.dept || ""),
+      department: reportingDepartmentName(item.department || item.dept || ""),
       target: Math.max(Number.parseInt(item.target, 10) || 0, 0)
     }))
     .filter((item) => item.department);
+  const merged = targets.reduce((acc, item) => {
+    acc[item.department] = Math.max(acc[item.department] || 0, item.target);
+    return acc;
+  }, {});
+  return Object.entries(merged).map(([department, target]) => ({ department, target }));
 }
 
 function loadState() {
@@ -272,7 +278,7 @@ function upsertBy(existing, incoming, keyFn) {
 }
 
 function groupKey(record) {
-  return [record.date, record.department, record.line, record.shift].join("::");
+  return [record.date, reportingDepartment(record), record.line, record.shift].join("::");
 }
 
 function userCan(view) {
@@ -283,9 +289,10 @@ function userCan(view) {
 
 function selectedContext() {
   if (currentUser?.role === "supervisor") {
+    const department = reportingDepartmentName(currentUser.department, currentUser.line);
     return {
       date: $("attendanceDate").value || today,
-      department: currentUser.department,
+      department,
       line: currentUser.line,
       shift: $("shiftSelect").value,
       supervisor: currentUser.name,
@@ -293,10 +300,11 @@ function selectedContext() {
     };
   }
 
+  const line = $("lineSelect").value;
   return {
     date: $("attendanceDate").value || today,
-    department: $("departmentSelect").value,
-    line: $("lineSelect").value,
+    department: reportingDepartmentName($("departmentSelect").value, line),
+    line,
     shift: $("shiftSelect").value,
     supervisor: $("supervisorName").value.trim() || currentUser?.name || "Supervisor",
     leaderId: currentUser?.id || "unknown"
@@ -353,13 +361,13 @@ function currentContextFallback() {
   const line = currentUser?.role === "supervisor"
     ? currentUser.line
     : $("lineSelect").value;
-  return { department, line };
+  return { department: reportingDepartmentName(department, line), line };
 }
 
 function refreshFilters() {
   const departments = currentUser?.role === "supervisor"
-    ? [currentUser.department]
-    : unique(state.operators.map((op) => op.department));
+    ? [reportingDepartmentName(currentUser.department, currentUser.line)]
+    : unique(state.operators.map(reportingDepartment));
   fillSelect($("departmentSelect"), departments);
   refreshHistoryFilters();
   refreshTargetDepartmentSelect();
@@ -370,14 +378,14 @@ function refreshLines() {
   const dept = $("departmentSelect").value;
   const lines = currentUser?.role === "supervisor"
     ? [currentUser.line]
-    : unique(state.operators.filter((op) => !dept || op.department === dept).map((op) => op.line));
+    : unique(state.operators.filter((op) => !dept || reportingDepartment(op) === dept).map((op) => op.line));
   fillSelect($("lineSelect"), lines);
   renderAll();
 }
 
 function refreshHistoryFilters() {
   if (currentUser?.role === "supervisor") {
-    fillSelect($("historyDepartmentSelect"), [currentUser.department]);
+    fillSelect($("historyDepartmentSelect"), [reportingDepartmentName(currentUser.department, currentUser.line)]);
     fillSelect($("historyLineSelect"), [currentUser.line]);
     $("historyDepartmentSelect").disabled = true;
     $("historyLineSelect").disabled = true;
@@ -387,7 +395,7 @@ function refreshHistoryFilters() {
   $("historyDepartmentSelect").disabled = false;
   $("historyLineSelect").disabled = false;
   const records = scopedAttendance();
-  fillSelectWithAll($("historyDepartmentSelect"), unique(records.map((record) => record.department)), "All Departments");
+  fillSelectWithAll($("historyDepartmentSelect"), unique(records.map(reportingDepartment)), "All Departments");
   refreshHistoryLines(false);
 }
 
@@ -400,7 +408,7 @@ function refreshHistoryLines(shouldRender = true) {
 
   const department = $("historyDepartmentSelect").value;
   const records = scopedAttendance().filter((record) =>
-    department === "all" || record.department === department
+    department === "all" || reportingDepartment(record) === department
   );
   fillSelectWithAll($("historyLineSelect"), unique(records.map((record) => record.line)), "All Lines");
   if (shouldRender) renderAll();
@@ -548,6 +556,24 @@ function cleanScannedValue(value) {
     .trim();
 }
 
+function reportingDepartmentName(department, line = "") {
+  const cleanDepartment = cleanScannedValue(department);
+  const cleanLine = cleanScannedValue(line);
+  const joined = `${cleanDepartment} ${cleanLine}`;
+  if (/\bassembly\b/i.test(joined) || /^lines?$/i.test(cleanDepartment)) {
+    return ASSEMBLY_DEPARTMENT;
+  }
+  return cleanDepartment;
+}
+
+function reportingDepartment(item = {}) {
+  return reportingDepartmentName(item.department, item.line || item.homeLine);
+}
+
+function reportingHomeDepartment(record = {}) {
+  return reportingDepartmentName(record.homeDepartment || record.department, record.homeLine || record.line);
+}
+
 function normalizeFieldName(name) {
   return String(name || "")
     .toLowerCase()
@@ -574,7 +600,7 @@ function normalizeScannedOperator(source = {}) {
   const rawDepartment = readScannedField(readableSource, ["department", "dept", "dept.", "deptname"]);
   const rawLine = readScannedField(readableSource, ["line", "lineName", "line_name"]);
   const splitContext = splitDepartmentLine(rawDepartment, rawLine);
-  const department = splitContext.department || fallback.department;
+  const department = reportingDepartmentName(splitContext.department || fallback.department, splitContext.line || fallback.line);
   const line = splitContext.line || fallback.line;
 
   if (!name || !department || !line) return null;
@@ -597,7 +623,7 @@ function operatorFromIdOnlyScan(code, context = selectedContext()) {
     code: String(code).trim(),
     name: `Emp. ID ${String(code).trim()}`,
     skill: "Details pending",
-    department: context.department,
+    department: reportingDepartmentName(context.department, context.line),
     line: context.line,
     doj: "",
     skillLevel: "",
@@ -711,6 +737,8 @@ function updateAttendanceDetails(operator) {
       name: operator.name || record.name,
       skill: operator.skill || record.skill,
       currentProcess: operator.skill || record.currentProcess,
+      homeDepartment: reportingDepartmentName(operator.department, operator.line) || record.homeDepartment || record.department,
+      homeLine: operator.line || record.homeLine || record.line,
       doj: operator.doj || record.doj || "",
       skillLevel: operator.skillLevel || record.skillLevel || "",
       issuedDate: operator.issuedDate || record.issuedDate || "",
@@ -880,14 +908,15 @@ async function scanLoop() {
 
 function scopedAttendance(records = state.attendance) {
   if (currentUser?.role !== "supervisor") return records;
-  return records.filter((record) => record.department === currentUser.department && record.line === currentUser.line);
+  const userDepartment = reportingDepartmentName(currentUser.department, currentUser.line);
+  return records.filter((record) => reportingDepartment(record) === userDepartment && record.line === currentUser.line);
 }
 
 function currentLineRecords() {
   const context = selectedContext();
   return state.attendance.filter((record) =>
     record.date === context.date &&
-    record.department === context.department &&
+    reportingDepartment(record) === context.department &&
     record.line === context.line &&
     record.shift === context.shift
   );
@@ -907,7 +936,7 @@ function renderAttendance() {
   const records = currentLineRecords();
   const counted = countedRecords(records);
   const required = state.operators.filter((op) =>
-    op.department === $("departmentSelect").value && op.line === $("lineSelect").value
+    reportingDepartment(op) === $("departmentSelect").value && op.line === $("lineSelect").value
   ).length;
 
   $("presentCount").textContent = counted.length;
@@ -928,7 +957,7 @@ function renderAttendance() {
       <td>${escapeHtml(record.code)}</td>
       <td>${escapeHtml(record.name)}</td>
       <td>${escapeHtml(record.skill)}</td>
-      <td>${escapeHtml(record.department)}</td>
+      <td>${escapeHtml(reportingDepartment(record))}</td>
       <td>${escapeHtml(record.line)}</td>
       <td><span class="status ${record.status === "Duplicate" ? "duplicate" : "present"}">${escapeHtml(record.status === "Duplicate" ? "Duplicate - counted once" : record.source || record.status)}</span></td>
       <td><button class="mini-btn" data-remove="${record.id}">Remove</button></td>
@@ -944,7 +973,7 @@ function attendanceGroups() {
     groups.get(key).push(record);
   });
   return [...groups.entries()].map(([key, records]) => ({ key, records, first: records[0] }))
-    .sort((a, b) => a.key.localeCompare(b.key));
+    .sort((a, b) => countedRecords(b.records).length - countedRecords(a.records).length || a.key.localeCompare(b.key));
 }
 
 function adminDailyRecords() {
@@ -958,21 +987,22 @@ function dashboardRecords(date = $("dashboardDate").value || today) {
 
 function departmentNames() {
   return unique([
-    ...state.operators.map((operator) => operator.department),
-    ...state.attendance.map((record) => record.department),
-    ...state.deptTargets.map((target) => target.department)
+    ...state.operators.map(reportingDepartment),
+    ...state.attendance.map(reportingDepartment),
+    ...state.deptTargets.map((target) => reportingDepartmentName(target.department))
   ]);
 }
 
 function departmentTarget(department) {
-  return state.deptTargets.find((target) => target.department === department)?.target || 0;
+  const cleanDepartment = reportingDepartmentName(department);
+  return state.deptTargets.find((target) => reportingDepartmentName(target.department) === cleanDepartment)?.target || 0;
 }
 
 function setDepartmentTarget(department, target) {
-  const cleanDepartment = cleanScannedValue(department);
+  const cleanDepartment = reportingDepartmentName(department);
   const cleanTarget = Math.max(Number.parseInt(target, 10) || 0, 0);
   if (!cleanDepartment) return;
-  state.deptTargets = state.deptTargets.filter((item) => item.department !== cleanDepartment);
+  state.deptTargets = state.deptTargets.filter((item) => reportingDepartmentName(item.department) !== cleanDepartment);
   state.deptTargets.push({ department: cleanDepartment, target: cleanTarget });
   state.deptTargets.sort((a, b) => a.department.localeCompare(b.department));
 }
@@ -981,7 +1011,7 @@ function departmentDashboardRows(date = $("dashboardDate").value || today) {
   const counted = countedRecords(dashboardRecords(date));
   const departments = departmentNames();
   return departments.map((department) => {
-    const deptRecords = counted.filter((record) => record.department === department);
+    const deptRecords = counted.filter((record) => reportingDepartment(record) === department);
     const lines = new Set(deptRecords.map((record) => record.line));
     const present = deptRecords.length;
     const target = departmentTarget(department);
@@ -1000,7 +1030,7 @@ function departmentDashboardRows(date = $("dashboardDate").value || today) {
             ? "Extra"
             : "Sufficient"
     };
-  });
+  }).sort((a, b) => b.present - a.present || b.target - a.target || a.department.localeCompare(b.department));
 }
 
 function statusClass(status) {
@@ -1022,8 +1052,9 @@ function colorForIndex(index) {
 
 function lineSessionsFor(operator, shift = "all") {
   const sessions = new Set();
+  const operatorDepartment = reportingDepartment(operator);
   state.attendance.forEach((record) => {
-    const sameLine = record.department === operator.department && record.line === operator.line;
+    const sameLine = reportingDepartment(record) === operatorDepartment && record.line === operator.line;
     const sameShift = shift === "all" || record.shift === shift;
     if (sameLine && sameShift) sessions.add(`${record.date}::${record.shift}`);
   });
@@ -1052,7 +1083,8 @@ function absenteeismFor(operator, shift = "all") {
 
 function scopedOperators() {
   if (currentUser?.role !== "supervisor") return state.operators;
-  return state.operators.filter((op) => op.department === currentUser.department && op.line === currentUser.line);
+  const userDepartment = reportingDepartmentName(currentUser.department, currentUser.line);
+  return state.operators.filter((op) => reportingDepartment(op) === userDepartment && op.line === currentUser.line);
 }
 
 function absentSessionLabel(session) {
@@ -1080,8 +1112,8 @@ function renderQueryResult(operatorCode = $("queryInput").value.trim()) {
     return;
   }
 
-  if (currentUser?.role === "supervisor" && (operator.department !== currentUser.department || operator.line !== currentUser.line)) {
-    $("queryResult").innerHTML = `<strong>Outside this login</strong><br><span>${escapeHtml(operator.name)} belongs to ${escapeHtml(operator.department)} / ${escapeHtml(operator.line)}.</span>`;
+  if (currentUser?.role === "supervisor" && (reportingDepartment(operator) !== reportingDepartmentName(currentUser.department, currentUser.line) || operator.line !== currentUser.line)) {
+    $("queryResult").innerHTML = `<strong>Outside this login</strong><br><span>${escapeHtml(operator.name)} belongs to ${escapeHtml(reportingDepartment(operator))} / ${escapeHtml(operator.line)}.</span>`;
     return;
   }
 
@@ -1090,7 +1122,7 @@ function renderQueryResult(operatorCode = $("queryInput").value.trim()) {
   $("queryResult").innerHTML = `
     <div class="query-person">
       <strong>${escapeHtml(operator.name)}</strong>
-      <span>${escapeHtml(operator.code)} · ${escapeHtml(operator.department)} / ${escapeHtml(operator.line)}</span>
+      <span>${escapeHtml(operator.code)} · ${escapeHtml(reportingDepartment(operator))} / ${escapeHtml(operator.line)}</span>
     </div>
     <div class="metrics compact-metrics">
       <div class="metric"><span>Working Sessions</span><strong>${stats.workingSessions}</strong></div>
@@ -1110,11 +1142,14 @@ function renderAdmin() {
   $("adminOperators").textContent = state.operators.length;
 
   const deptCounts = counted.reduce((acc, record) => {
-    acc[record.department] = (acc[record.department] || 0) + 1;
+    const department = reportingDepartment(record);
+    acc[department] = (acc[department] || 0) + 1;
     return acc;
   }, {});
   const max = Math.max(...Object.values(deptCounts), 1);
-  $("deptBars").innerHTML = Object.entries(deptCounts).map(([dept, count]) => `
+  $("deptBars").innerHTML = Object.entries(deptCounts)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([dept, count]) => `
     <div class="bar-row">
       <span>${escapeHtml(dept)}</span>
       <progress max="${max}" value="${count}"></progress>
@@ -1131,15 +1166,15 @@ function renderAdmin() {
     return `
       <tr>
         <td>${escapeHtml(first.date)}</td>
-        <td>${escapeHtml(first.department)}</td>
+        <td>${escapeHtml(reportingDepartment(first))}</td>
         <td>${escapeHtml(first.line)}</td>
         <td>${escapeHtml(first.shift)}</td>
         <td>${countedGroup.length}</td>
         <td>${escapeHtml(skills)}</td>
-        <td>${escapeHtml(names)}</td>
+      <td>${escapeHtml(names)}</td>
       </tr>
     `;
-  }).join("") || `<tr><td colspan="8">No compiled data yet.</td></tr>`;
+  }).join("") || `<tr><td colspan="7">No compiled data yet.</td></tr>`;
 }
 
 function renderDashboard() {
@@ -1156,10 +1191,13 @@ function renderDashboard() {
   $("dashboardLow").textContent = lowTotal;
   $("dashboardExtra").textContent = extraTotal;
   $("dashboardDeptCount").textContent = `${rows.length} Dept.`;
+  $("dashboardMixLabel").textContent = date === today ? "Today" : date;
 
   if (selected && selected.department !== selectedDashboardDept) {
     selectedDashboardDept = selected.department;
   }
+
+  renderDashboardPie(rows, presentTotal);
 
   $("dashboardDeptCards").innerHTML = rows.map((row, index) => {
     const targetPercent = row.target ? Math.min(Math.round((row.present / row.target) * 100), 160) : 0;
@@ -1187,6 +1225,41 @@ function renderDashboard() {
   renderDashboardTrend(date);
 }
 
+function renderDashboardPie(rows, presentTotal) {
+  const activeRows = rows
+    .map((row, index) => ({ ...row, colorIndex: index }))
+    .filter((row) => row.present > 0);
+  let angle = 0;
+  const slices = activeRows.map((row, index) => {
+    const size = presentTotal ? (row.present / presentTotal) * 360 : 0;
+    const start = angle;
+    const end = angle + size;
+    angle = end;
+    return `${colorForIndex(row.colorIndex)} ${start}deg ${end}deg`;
+  });
+  const chartFill = slices.length
+    ? `conic-gradient(${slices.join(", ")})`
+    : "conic-gradient(#dce5e8 0deg 360deg)";
+
+  $("dashboardPie").style.background = `
+    radial-gradient(circle at center, #ffffff 0 56%, transparent 57%),
+    ${chartFill}
+  `;
+  $("dashboardPie").classList.toggle("empty", !activeRows.length);
+  $("dashboardPieTotal").textContent = presentTotal;
+  $("dashboardPieLegend").innerHTML = rows.map((row, index) => {
+    const percent = presentTotal ? Math.round((row.present / presentTotal) * 100) : 0;
+    return `
+      <button type="button" data-pie-dept="${escapeHtml(row.department)}" class="${row.department === selectedDashboardDept ? "active" : ""}">
+        <i style="background:${colorForIndex(index)}"></i>
+        <span>${escapeHtml(row.department)}</span>
+        <strong>${row.present}</strong>
+        <small>${percent}%</small>
+      </button>
+    `;
+  }).join("") || `<div class="stack-empty">No present count available.</div>`;
+}
+
 function renderDashboardDetail(row) {
   if (!row) {
     $("dashboardDetailTitle").textContent = "Department Detail";
@@ -1201,7 +1274,7 @@ function renderDashboardDetail(row) {
 
   const date = $("dashboardDate").value || today;
   const records = countedRecords(dashboardRecords(date))
-    .filter((record) => record.department === row.department);
+    .filter((record) => reportingDepartment(record) === row.department);
   const ringPercent = row.target ? Math.min(Math.round((row.present / row.target) * 100), 160) : 0;
   const ringDisplay = row.target ? `${Math.min(ringPercent, 999)}%` : "--";
 
@@ -1246,7 +1319,8 @@ function renderDashboardTrend(endDate = $("dashboardDate").value || today) {
     const counted = countedRecords(dashboardRecords(date));
     const counts = Object.fromEntries(departments.map((department) => [department, 0]));
     counted.forEach((record) => {
-      counts[record.department] = (counts[record.department] || 0) + 1;
+      const department = reportingDepartment(record);
+      counts[department] = (counts[department] || 0) + 1;
     });
     return {
       date,
@@ -1284,7 +1358,7 @@ function renderBlacklist() {
     <tr>
       <td>${escapeHtml(item.operator.code)}</td>
       <td>${escapeHtml(item.operator.name)}</td>
-      <td>${escapeHtml(item.operator.department)}</td>
+      <td>${escapeHtml(reportingDepartment(item.operator))}</td>
       <td>${escapeHtml(item.operator.line)}</td>
       <td>${item.workingSessions}</td>
       <td>${item.absentCount}</td>
@@ -1304,7 +1378,7 @@ function historyRecords() {
 
   return scopedAttendance()
     .filter((record) => record.date >= fromDate && record.date <= toDate)
-    .filter((record) => department === "all" || record.department === department)
+    .filter((record) => department === "all" || reportingDepartment(record) === department)
     .filter((record) => line === "all" || record.line === line)
     .filter((record) => shift === "all" || record.shift === shift)
     .filter((record) => {
@@ -1331,7 +1405,7 @@ function renderHistory() {
       <td>${escapeHtml(record.time)}</td>
       <td>${escapeHtml(record.code)}</td>
       <td>${escapeHtml(record.name)}</td>
-      <td>${escapeHtml(record.department)}</td>
+      <td>${escapeHtml(reportingDepartment(record))}</td>
       <td>${escapeHtml(record.line)}</td>
       <td>${escapeHtml(record.shift)}</td>
       <td>${escapeHtml(record.currentProcess || record.skill)}</td>
@@ -1346,7 +1420,7 @@ function renderMaster() {
   const operators = state.operators
     .filter((op) => {
       if (!search) return true;
-      return [op.code, op.name, op.skill, op.department, op.line]
+      return [op.code, op.name, op.skill, reportingDepartment(op), op.department, op.line]
         .some((value) => String(value || "").toLowerCase().includes(search));
     })
     .sort((a, b) => String(a.code).localeCompare(String(b.code), undefined, { numeric: true }));
@@ -1358,7 +1432,7 @@ function renderMaster() {
       <td>${escapeHtml(op.code)}</td>
       <td>${escapeHtml(op.name)}</td>
       <td>${escapeHtml(op.skill)}</td>
-      <td>${escapeHtml(op.department)}</td>
+      <td>${escapeHtml(reportingDepartment(op))}</td>
       <td>${escapeHtml(op.line)}</td>
       <td>${escapeHtml(op.doj || "")}</td>
       <td>${escapeHtml(op.skillLevel || "")}</td>
@@ -1460,9 +1534,9 @@ function exportExcel() {
       record.time,
       record.code,
       record.name,
-      record.department,
+      reportingDepartment(record),
       record.line,
-      record.homeDepartment || record.department,
+      reportingHomeDepartment(record),
       record.homeLine || record.line,
       record.currentProcess || record.skill,
       record.skillLevel || "",
@@ -1504,7 +1578,7 @@ function exportBlacklist() {
     rows.push([
       item.operator.code,
       item.operator.name,
-      item.operator.department,
+      reportingDepartment(item.operator),
       item.operator.line,
       item.workingSessions,
       item.absentCount,
@@ -1530,9 +1604,9 @@ function exportHistory() {
       record.time,
       record.code,
       record.name,
-      record.department,
+      reportingDepartment(record),
       record.line,
-      record.homeDepartment || record.department,
+      reportingHomeDepartment(record),
       record.homeLine || record.line,
       record.shift,
       record.currentProcess || record.skill,
@@ -1639,7 +1713,7 @@ function normalizeReferenceOperator(operator) {
   const cleanOperator = {
     code: cleanScannedValue(operator.code),
     name: cleanScannedValue(operator.name),
-    department: splitContext.department,
+    department: reportingDepartmentName(splitContext.department, splitContext.line),
     line: splitContext.line,
     skill: cleanScannedValue(operator.skill) || "Not specified",
     doj: cleanScannedValue(operator.doj),
@@ -1681,7 +1755,7 @@ function applyLoginState() {
 
   $("currentUserLabel").textContent = `${currentUser.name} (${currentUser.role})`;
   $("currentScopeLabel").textContent = currentUser.role === "supervisor"
-    ? `${currentUser.department} / ${currentUser.line}`
+    ? `${reportingDepartmentName(currentUser.department, currentUser.line)} / ${currentUser.line}`
     : "All plant departments";
   $("departmentSelect").disabled = currentUser.role === "supervisor";
   $("lineSelect").disabled = currentUser.role === "supervisor";
@@ -1769,7 +1843,11 @@ $("departmentSelect").addEventListener("change", refreshLines);
   $(id).addEventListener("change", renderAll);
 });
 $("dashboardDate").addEventListener("change", renderAll);
-$("targetDeptSelect").addEventListener("change", updateTargetInput);
+$("targetDeptSelect").addEventListener("change", () => {
+  selectedDashboardDept = $("targetDeptSelect").value;
+  updateTargetInput();
+  renderDashboard();
+});
 $("saveTargetBtn").addEventListener("click", () => {
   const department = $("targetDeptSelect").value;
   if (!department) {
@@ -1786,6 +1864,23 @@ $("dashboardDeptCards").addEventListener("click", (event) => {
   const card = event.target.closest("[data-dashboard-dept]");
   if (!card) return;
   selectedDashboardDept = card.dataset.dashboardDept;
+  $("targetDeptSelect").value = selectedDashboardDept;
+  updateTargetInput();
+  renderDashboard();
+});
+$("dashboardPieLegend").addEventListener("click", (event) => {
+  const item = event.target.closest("[data-pie-dept]");
+  if (!item) return;
+  selectedDashboardDept = item.dataset.pieDept;
+  $("targetDeptSelect").value = selectedDashboardDept;
+  updateTargetInput();
+  renderDashboard();
+});
+$("dashboardPie").addEventListener("click", () => {
+  const rows = departmentDashboardRows();
+  const topRow = rows.find((row) => row.present > 0) || rows[0];
+  if (!topRow) return;
+  selectedDashboardDept = topRow.department;
   $("targetDeptSelect").value = selectedDashboardDept;
   updateTargetInput();
   renderDashboard();

@@ -274,6 +274,23 @@
             </div>
 
             <div class="dashboard-main">
+              <section class="dashboard-section mix-panel">
+                <div class="section-head">
+                  <div>
+                    <h3>Department Mix</h3>
+                    <p>Click a colour to open department details.</p>
+                  </div>
+                  <strong id="dashboardMixLabel">Today</strong>
+                </div>
+                <div class="mix-chart">
+                  <button class="department-donut" id="dashboardPie" type="button" aria-label="Department mix chart">
+                    <strong id="dashboardPieTotal">0</strong>
+                    <span>present</span>
+                  </button>
+                  <div class="pie-legend" id="dashboardPieLegend"></div>
+                </div>
+              </section>
+
               <section class="dashboard-section dept-map">
                 <div class="section-head">
                   <div>
@@ -283,6 +300,21 @@
                   <strong id="dashboardDeptCount">0 Dept.</strong>
                 </div>
                 <div class="dept-card-grid" id="dashboardDeptCards"></div>
+              </section>
+
+            </div>
+
+            <div class="dashboard-lower">
+              <section class="dashboard-section trend-panel">
+                <div class="section-head">
+                  <div>
+                    <h3>Day-wise Total Present</h3>
+                    <p>Click any day bar to open that date.</p>
+                  </div>
+                  <strong id="dashboardTrendTotal">0</strong>
+                </div>
+                <div class="stacked-chart" id="dashboardTrend"></div>
+                <div class="trend-legend" id="dashboardLegend"></div>
               </section>
 
               <section class="dashboard-section detail-drawer">
@@ -315,18 +347,6 @@
                 </div>
               </section>
             </div>
-
-            <section class="dashboard-section trend-panel">
-              <div class="section-head">
-                <div>
-                  <h3>Day-wise Total Present</h3>
-                  <p>Click any day bar to open that date.</p>
-                </div>
-                <strong id="dashboardTrendTotal">0</strong>
-              </div>
-              <div class="stacked-chart" id="dashboardTrend"></div>
-              <div class="trend-legend" id="dashboardLegend"></div>
-            </section>
           </section>
         </section>
 
