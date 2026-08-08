@@ -46,6 +46,7 @@ let syncInFlight = false;
 let lastScanValue = "";
 let lastScanAt = 0;
 let editingUserId = "";
+let selectedDashboardDept = "";
 
 const $ = (id) => document.getElementById(id);
 let today = localDate();
@@ -1148,36 +1149,94 @@ function renderDashboard() {
   const targetTotal = rows.reduce((sum, row) => sum + row.target, 0);
   const lowTotal = rows.reduce((sum, row) => sum + Math.max(row.target - row.present, 0), 0);
   const extraTotal = rows.reduce((sum, row) => sum + Math.max(row.present - row.target, 0), 0);
+  const selected = rows.find((row) => row.department === selectedDashboardDept) || rows[0] || null;
 
   $("dashboardPresent").textContent = presentTotal;
   $("dashboardTarget").textContent = targetTotal;
   $("dashboardLow").textContent = lowTotal;
   $("dashboardExtra").textContent = extraTotal;
+  $("dashboardDeptCount").textContent = `${rows.length} Dept.`;
 
-  $("dashboardDeptRows").innerHTML = rows.map((row) => `
-    <tr>
-      <td>${escapeHtml(row.department)}</td>
-      <td>${row.present}</td>
-      <td>${row.target || "Not set"}</td>
-      <td>${row.target ? row.difference : "-"}</td>
-      <td><span class="status ${statusClass(row.status)}">${escapeHtml(row.status)}</span></td>
-      <td>${row.lines}</td>
-    </tr>
-  `).join("") || `<tr><td colspan="6">No department data available.</td></tr>`;
+  if (selected && selected.department !== selectedDashboardDept) {
+    selectedDashboardDept = selected.department;
+  }
 
-  renderTargetRows(rows);
+  $("dashboardDeptCards").innerHTML = rows.map((row, index) => {
+    const targetPercent = row.target ? Math.min(Math.round((row.present / row.target) * 100), 160) : 0;
+    const barWidth = row.target ? Math.min(targetPercent, 100) : row.present ? 100 : 0;
+    return `
+      <button class="dept-card ${row.department === selectedDashboardDept ? "active" : ""}" type="button" data-dashboard-dept="${escapeHtml(row.department)}" style="--accent:${colorForIndex(index)}">
+        <span class="dept-topline">
+          <strong>${escapeHtml(row.department)}</strong>
+          <em class="status ${statusClass(row.status)}">${escapeHtml(row.status)}</em>
+        </span>
+        <span class="dept-numbers">
+          <b>${row.present}</b>
+          <small>/ ${row.target || "No target"}</small>
+        </span>
+        <span class="dept-progress"><i style="width:${barWidth}%"></i></span>
+        <span class="dept-footer">
+          <small>${row.lines} lines</small>
+          <small>${row.target ? `${row.difference >= 0 ? "+" : ""}${row.difference}` : "set target"}</small>
+        </span>
+      </button>
+    `;
+  }).join("") || `<div class="stack-empty">No department data available.</div>`;
+
+  renderDashboardDetail(selected);
   renderDashboardTrend(date);
 }
 
-function renderTargetRows(rows = departmentDashboardRows()) {
-  $("targetRows").innerHTML = rows.map((row) => `
-    <tr>
-      <td>${escapeHtml(row.department)}</td>
-      <td>${row.target || "Not set"}</td>
-      <td>${row.present}</td>
-      <td><span class="status ${statusClass(row.status)}">${escapeHtml(row.status)}</span></td>
-    </tr>
-  `).join("") || `<tr><td colspan="4">No departments available for target setup.</td></tr>`;
+function renderDashboardDetail(row) {
+  if (!row) {
+    $("dashboardDetailTitle").textContent = "Department Detail";
+    $("dashboardDetailMeta").textContent = "No department data available.";
+    $("dashboardDetailStatus").textContent = "No target";
+    $("dashboardDetailStatus").className = "status pending";
+    $("dashboardTargetRing").innerHTML = `<strong>0%</strong><span>target</span>`;
+    $("dashboardInsight").innerHTML = "";
+    $("dashboardDetailRows").innerHTML = `<tr><td colspan="4">No details available.</td></tr>`;
+    return;
+  }
+
+  const date = $("dashboardDate").value || today;
+  const records = countedRecords(dashboardRecords(date))
+    .filter((record) => record.department === row.department);
+  const ringPercent = row.target ? Math.min(Math.round((row.present / row.target) * 100), 160) : 0;
+  const ringDisplay = row.target ? `${Math.min(ringPercent, 999)}%` : "--";
+
+  $("dashboardDetailTitle").textContent = row.department;
+  $("dashboardDetailMeta").textContent = `${date} · ${row.present} present · ${row.target || "target not set"} target`;
+  $("dashboardDetailStatus").textContent = row.status;
+  $("dashboardDetailStatus").className = `status ${statusClass(row.status)}`;
+  $("dashboardTargetRing").style.setProperty("--ring", `${Math.min(ringPercent, 100) * 3.6}deg`);
+  $("dashboardTargetRing").innerHTML = `<strong>${ringDisplay}</strong><span>target</span>`;
+  $("dashboardInsight").innerHTML = `
+    <div><span>Present</span><strong>${row.present}</strong></div>
+    <div><span>Target</span><strong>${row.target || "Not set"}</strong></div>
+    <div><span>Difference</span><strong>${row.target ? `${row.difference >= 0 ? "+" : ""}${row.difference}` : "-"}</strong></div>
+    <div><span>Lines</span><strong>${row.lines}</strong></div>
+  `;
+
+  const groups = new Map();
+  records.forEach((record) => {
+    const key = `${record.line}::${record.shift}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(record);
+  });
+
+  $("dashboardDetailRows").innerHTML = [...groups.entries()].map(([key, groupRecords]) => {
+    const [line, shift] = key.split("::");
+    const names = groupRecords.map((record) => record.name).join(", ");
+    return `
+      <tr>
+        <td>${escapeHtml(line)}</td>
+        <td>${escapeHtml(shift)}</td>
+        <td>${groupRecords.length}</td>
+        <td>${escapeHtml(names)}</td>
+      </tr>
+    `;
+  }).join("") || `<tr><td colspan="4">No attendance for this department on selected date.</td></tr>`;
 }
 
 function renderDashboardTrend(endDate = $("dashboardDate").value || today) {
@@ -1197,8 +1256,9 @@ function renderDashboardTrend(endDate = $("dashboardDate").value || today) {
   });
   const max = Math.max(...dayRows.map((row) => row.total), 1);
 
+  $("dashboardTrendTotal").textContent = `${dayRows.reduce((sum, row) => sum + row.total, 0)} in 14 days`;
   $("dashboardTrend").innerHTML = dayRows.map((row) => `
-    <div class="stack-row">
+    <button class="stack-row ${row.date === endDate ? "active" : ""}" type="button" data-trend-date="${escapeHtml(row.date)}">
       <span>${escapeHtml(row.date.slice(5))}</span>
       <div class="stack-track" title="${escapeHtml(`${row.date}: ${row.total}`)}">
         <div class="stack-fill" style="width:${(row.total / max) * 100}%">
@@ -1210,7 +1270,7 @@ function renderDashboardTrend(endDate = $("dashboardDate").value || today) {
         </div>
       </div>
       <strong>${row.total}</strong>
-    </div>
+    </button>
   `).join("") || `<div class="stack-empty">No trend data available.</div>`;
 
   $("dashboardLegend").innerHTML = departments.map((department, index) => `
@@ -1721,6 +1781,36 @@ $("saveTargetBtn").addEventListener("click", () => {
   refreshTargetDepartmentSelect();
   renderAll();
   showToast("Department target saved.");
+});
+$("dashboardDeptCards").addEventListener("click", (event) => {
+  const card = event.target.closest("[data-dashboard-dept]");
+  if (!card) return;
+  selectedDashboardDept = card.dataset.dashboardDept;
+  $("targetDeptSelect").value = selectedDashboardDept;
+  updateTargetInput();
+  renderDashboard();
+});
+$("dashboardTrend").addEventListener("click", (event) => {
+  const row = event.target.closest("[data-trend-date]");
+  if (!row) return;
+  $("dashboardDate").value = row.dataset.trendDate;
+  renderAll();
+});
+document.querySelectorAll("[data-kpi]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const rows = departmentDashboardRows();
+    const mode = button.dataset.kpi;
+    const targetRow = mode === "low"
+      ? rows.find((row) => row.status === "Low")
+      : mode === "extra"
+        ? rows.find((row) => row.status === "Extra")
+        : rows.sort((a, b) => b.present - a.present)[0];
+    if (!targetRow) return;
+    selectedDashboardDept = targetRow.department;
+    $("targetDeptSelect").value = selectedDashboardDept;
+    updateTargetInput();
+    renderDashboard();
+  });
 });
 
 $("scanInput").addEventListener("keydown", (event) => {

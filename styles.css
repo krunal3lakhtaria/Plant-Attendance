@@ -408,10 +408,6 @@ video {
   margin-bottom: 14px;
 }
 
-.dashboard-metrics {
-  grid-template-columns: repeat(4, 1fr);
-}
-
 .metric {
   min-height: 100px;
   padding: 14px;
@@ -517,16 +513,238 @@ video {
   line-height: 1.5;
 }
 
-.compact-date {
-  min-width: 180px;
+.dashboard-board {
+  display: grid;
+  gap: 16px;
 }
 
-.target-form {
+.dashboard-command {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(180px, 240px) auto;
+  grid-template-columns: minmax(260px, .8fr) minmax(520px, 1.2fr);
+  gap: 18px;
+  align-items: end;
+  padding: 18px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #103840 0%, #126170 48%, #2f7d64 100%);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.dashboard-command h3 {
+  font-size: 26px;
+}
+
+.dashboard-command p, .dashboard-command .eyebrow {
+  color: rgba(255, 255, 255, .78);
+}
+
+.dashboard-controls {
+  display: grid;
+  grid-template-columns: 160px minmax(160px, 1fr) 150px auto;
   gap: 10px;
+  align-items: end;
+}
+
+.dashboard-controls label {
+  color: rgba(255, 255, 255, .84);
+}
+
+.dashboard-controls .primary-btn {
+  background: #f5b400;
+  color: #10272d;
+}
+
+.dashboard-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.kpi-tile {
+  min-height: 122px;
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  padding: 16px;
+  color: #ffffff;
+  border-radius: 8px;
+  text-align: left;
+  box-shadow: var(--shadow);
+}
+
+.kpi-tile span, .kpi-tile small {
+  color: rgba(255, 255, 255, .82);
+  font-weight: 800;
+}
+
+.kpi-tile strong {
+  font-size: 34px;
+  line-height: 1;
+}
+
+.total-tile { background: linear-gradient(135deg, #116a7b, #15a7a0); }
+.target-tile { background: linear-gradient(135deg, #4b5bdc, #7c5cff); }
+.low-tile { background: linear-gradient(135deg, #b42318, #ef6b4a); }
+.extra-tile { background: linear-gradient(135deg, #0b5c96, #28a0d8); }
+
+.dashboard-main {
+  display: grid;
+  grid-template-columns: minmax(360px, 1.1fr) minmax(340px, .9fr);
+  gap: 16px;
+}
+
+.dashboard-section {
+  min-width: 0;
+  padding: 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 14px;
+}
+
+.section-head p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.dept-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.dept-card {
+  display: grid;
+  gap: 12px;
+  min-height: 156px;
+  padding: 14px;
+  color: var(--ink);
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-left: 6px solid var(--accent);
+  border-radius: 8px;
+  text-align: left;
+  box-shadow: 0 8px 20px rgba(16, 31, 36, .06);
+}
+
+.dept-card.active {
+  outline: 3px solid rgba(17, 106, 123, .18);
+  border-color: rgba(17, 106, 123, .34);
+}
+
+.dept-topline, .dept-footer, .dept-numbers {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dept-topline strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dept-topline .status {
+  min-width: auto;
+  white-space: nowrap;
+}
+
+.dept-topline em {
+  font-style: normal;
+}
+
+.dept-numbers b {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.dept-numbers small, .dept-footer small {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.dept-progress {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #edf3f5;
+}
+
+.dept-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.detail-split {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 14px;
   align-items: stretch;
+  margin-bottom: 14px;
+}
+
+.target-ring {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at center, #ffffff 0 58%, transparent 59%),
+    conic-gradient(#18a999 var(--ring, 0deg), #edf3f5 0);
+  border: 1px solid var(--line);
+}
+
+.target-ring strong {
+  font-size: 26px;
+}
+
+.target-ring span {
+  color: var(--muted);
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.detail-summary {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.detail-summary div {
+  min-height: 64px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 10px;
+  background: #f7fafb;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.detail-summary span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.detail-summary strong {
+  font-size: 22px;
+}
+
+.compact-table table {
+  min-width: 620px;
 }
 
 .stacked-chart {
@@ -539,6 +757,12 @@ video {
   grid-template-columns: 56px minmax(180px, 1fr) 44px;
   gap: 10px;
   align-items: center;
+  min-height: 36px;
+  padding: 6px 8px;
+  color: var(--ink);
+  background: #f7fafb;
+  border: 1px solid transparent;
+  border-radius: 8px;
 }
 
 .stack-row span {
@@ -549,6 +773,11 @@ video {
 
 .stack-row strong {
   text-align: right;
+}
+
+.stack-row.active {
+  border-color: rgba(17, 106, 123, .32);
+  background: #eef8f6;
 }
 
 .stack-track {
@@ -844,7 +1073,8 @@ tr:last-child td {
     padding-inline: 18px;
   }
 
-  .toolbar, .history-toolbar, .master-toolbar, .scan-grid, .admin-grid, .operator-form, .login-create, .query-line, .dashboard-metrics, .target-form {
+  .toolbar, .history-toolbar, .master-toolbar, .scan-grid, .admin-grid, .operator-form, .login-create, .query-line,
+  .dashboard-command, .dashboard-controls, .dashboard-kpis, .dashboard-main, .dept-card-grid {
     grid-template-columns: 1fr 1fr;
   }
 }
@@ -859,7 +1089,8 @@ tr:last-child td {
     flex-direction: column;
   }
 
-  .toolbar, .history-toolbar, .master-toolbar, .scan-grid, .admin-grid, .operator-form, .login-create, .query-line, .metrics, .target-form {
+  .toolbar, .history-toolbar, .master-toolbar, .scan-grid, .admin-grid, .operator-form, .login-create, .query-line, .metrics,
+  .dashboard-command, .dashboard-controls, .dashboard-kpis, .dashboard-main, .dept-card-grid, .detail-split, .detail-summary {
     grid-template-columns: 1fr;
   }
 
