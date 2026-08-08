@@ -557,6 +557,26 @@ tr:last-child td {
   color: var(--brand-strong);
 }
 
+.danger-mini {
+  color: #8a1f11;
+  background: #fff0eb;
+}
+
+.row-actions, .login-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.login-actions {
+  justify-content: flex-end;
+}
+
+.hidden {
+  display: none !important;
+}
+
 .master-actions {
   margin-bottom: 12px;
 }

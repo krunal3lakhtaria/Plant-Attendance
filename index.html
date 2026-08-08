@@ -408,7 +408,10 @@
                 <h3>Login Control</h3>
                 <p>Admin creates department and line-leader access.</p>
               </div>
-              <button class="primary-btn" id="addUserBtn">Create Login</button>
+              <div class="login-actions">
+                <button class="primary-btn" id="addUserBtn">Create Login</button>
+                <button class="ghost-btn hidden" id="cancelUserEditBtn" type="button">Cancel Edit</button>
+              </div>
             </div>
             <div class="operator-form login-create">
               <input id="newLoginName" placeholder="Leader/Admin name">
@@ -430,7 +433,7 @@
                     <th>Role</th>
                     <th>Department</th>
                     <th>Line</th>
-                    <th></th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody id="userRows"></tbody>

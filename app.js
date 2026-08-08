@@ -45,6 +45,7 @@ let saveVersion = 0;
 let syncInFlight = false;
 let lastScanValue = "";
 let lastScanAt = 0;
+let editingUserId = "";
 
 const $ = (id) => document.getElementById(id);
 const today = localDate();
@@ -1116,7 +1117,12 @@ function renderUsers() {
       <td>${escapeHtml(user.role)}</td>
       <td>${escapeHtml(user.department || "All")}</td>
       <td>${escapeHtml(user.line || "All")}</td>
-      <td>${canRemoveUser(user, adminCount) ? `<button class="mini-btn" data-remove-user="${escapeHtml(user.id)}">Remove</button>` : ""}</td>
+      <td>
+        <div class="row-actions">
+          <button class="mini-btn" data-edit-user="${escapeHtml(user.id)}">Modify</button>
+          ${canRemoveUser(user, adminCount) ? `<button class="mini-btn danger-mini" data-remove-user="${escapeHtml(user.id)}">Remove</button>` : ""}
+        </div>
+      </td>
     </tr>
   `).join("");
 }
@@ -1124,6 +1130,25 @@ function renderUsers() {
 function canRemoveUser(user, adminCount = state.users.filter((item) => item.role === "admin").length) {
   if (currentUser?.id === user.id) return false;
   if (user.role === "admin" && adminCount <= 1) return false;
+  return true;
+}
+
+function canSaveUserChange(previousUser, nextUser) {
+  if (!previousUser) return true;
+  const adminCount = state.users.filter((user) => user.role === "admin").length;
+  const removingAdminAccess = previousUser.role === "admin" && nextUser.role !== "admin";
+  if (removingAdminAccess && adminCount <= 1) {
+    showToast("Keep at least one admin login active.");
+    return false;
+  }
+  if (previousUser.id === currentUser?.id && nextUser.role !== "admin") {
+    showToast("You cannot remove admin access from your current login.");
+    return false;
+  }
+  if (previousUser.id === currentUser?.id && previousUser.id !== nextUser.id) {
+    showToast("Current login User ID cannot be changed while you are using it.");
+    return false;
+  }
   return true;
 }
 
@@ -1587,8 +1612,8 @@ $("masterFile").addEventListener("change", async (event) => {
   showToast(`${result.total} master records uploaded.`);
 });
 
-$("addUserBtn").addEventListener("click", () => {
-  const user = {
+function userFromLoginForm() {
+  return {
     name: $("newLoginName").value.trim(),
     id: $("newLoginId").value.trim(),
     password: $("newLoginPass").value.trim(),
@@ -1596,6 +1621,32 @@ $("addUserBtn").addEventListener("click", () => {
     department: $("newLoginDept").value.trim() || "All",
     line: $("newLoginLine").value.trim() || "All"
   };
+}
+
+function clearLoginForm() {
+  ["newLoginName", "newLoginId", "newLoginPass", "newLoginDept", "newLoginLine"].forEach((id) => $(id).value = "");
+  $("newLoginRole").value = "supervisor";
+  editingUserId = "";
+  $("addUserBtn").textContent = "Create Login";
+  $("cancelUserEditBtn").classList.add("hidden");
+}
+
+function setLoginFormForEdit(user) {
+  editingUserId = user.id;
+  $("newLoginName").value = user.name || "";
+  $("newLoginId").value = user.id || "";
+  $("newLoginPass").value = user.password || "";
+  $("newLoginRole").value = user.role || "supervisor";
+  $("newLoginDept").value = user.department || "All";
+  $("newLoginLine").value = user.line || "All";
+  $("addUserBtn").textContent = "Save Changes";
+  $("cancelUserEditBtn").classList.remove("hidden");
+  $("newLoginName").focus();
+}
+
+function saveLoginFromForm() {
+  const user = userFromLoginForm();
+  const wasEditing = Boolean(editingUserId);
   if (!user.name || !user.id || !user.password) {
     showToast("Enter name, user ID and password.");
     return;
@@ -1604,15 +1655,49 @@ $("addUserBtn").addEventListener("click", () => {
     showToast("Line leader login needs department and line.");
     return;
   }
-  state.users = state.users.filter((item) => item.id !== user.id);
+  const previousUser = editingUserId
+    ? state.users.find((item) => item.id === editingUserId)
+    : null;
+  const sameIdExists = state.users.some((item) => item.id === user.id && item.id !== editingUserId);
+  if (sameIdExists) {
+    showToast("This User ID already exists. Modify that login or use another ID.");
+    return;
+  }
+  if (!canSaveUserChange(previousUser, user)) return;
+  if (editingUserId && editingUserId !== user.id) {
+    state.deletedUserIds = unique([...state.deletedUserIds, editingUserId]);
+  }
+  state.deletedUserIds = state.deletedUserIds.filter((id) => id !== user.id);
+  state.users = state.users.filter((item) => item.id !== (editingUserId || user.id));
   state.users.push(user);
-  ["newLoginName", "newLoginId", "newLoginPass", "newLoginDept", "newLoginLine"].forEach((id) => $(id).value = "");
+  if (currentUser?.id === editingUserId || currentUser?.id === user.id) {
+    currentUser = user;
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(user));
+    applyLoginState();
+  }
+  clearLoginForm();
   saveState();
-  renderUsers();
-  showToast("Login created.");
-});
+  renderAll();
+  showToast(wasEditing ? "Login updated." : "Login created.");
+}
+
+$("addUserBtn").addEventListener("click", saveLoginFromForm);
+$("cancelUserEditBtn").addEventListener("click", clearLoginForm);
 
 $("userRows").addEventListener("click", (event) => {
+  const editId = event.target.dataset.editUser;
+  if (editId) {
+    const user = state.users.find((item) => item.id === editId);
+    if (!user) {
+      showToast("Login not found.");
+      renderUsers();
+      return;
+    }
+    setLoginFormForEdit(user);
+    showToast(`Editing login ${editId}.`);
+    return;
+  }
+
   const id = event.target.dataset.removeUser;
   if (!id) return;
   const user = state.users.find((item) => item.id === id);
@@ -1624,6 +1709,7 @@ $("userRows").addEventListener("click", (event) => {
   if (!window.confirm(`Remove login ${id}?`)) return;
   state.deletedUserIds.push(id);
   state.users = state.users.filter((user) => user.id !== id);
+  if (editingUserId === id) clearLoginForm();
   saveState();
   renderUsers();
 });
