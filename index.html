@@ -76,6 +76,9 @@
           <button class="nav-tab" data-view="admin" title="Admin dashboard">
             <span>Admin</span>
           </button>
+          <button class="nav-tab" data-view="dashboard" title="Department dashboard">
+            <span>Dashboard</span>
+          </button>
           <button class="nav-tab" data-view="history" title="Backdated attendance">
             <span>History</span>
           </button>
@@ -217,6 +220,89 @@
                   </tr>
                 </thead>
                 <tbody id="attendanceRows"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="dashboardView">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Daily Department Dashboard</h3>
+                <p>Default view shows today. Change date to verify older attendance.</p>
+              </div>
+              <label class="compact-date">
+                Date
+                <input type="date" id="dashboardDate">
+              </label>
+            </div>
+            <div class="metrics dashboard-metrics">
+              <div class="metric"><span>Total Present</span><strong id="dashboardPresent">0</strong></div>
+              <div class="metric"><span>Total Target</span><strong id="dashboardTarget">0</strong></div>
+              <div class="metric"><span>Low Manpower</span><strong id="dashboardLow">0</strong></div>
+              <div class="metric"><span>Extra Manpower</span><strong id="dashboardExtra">0</strong></div>
+            </div>
+          </section>
+
+          <section class="panel table-panel">
+            <div class="panel-head">
+              <div>
+                <h3>Department Status</h3>
+                <p>Present count is compared with monthly manpower target.</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Department</th>
+                    <th>Present</th>
+                    <th>Target</th>
+                    <th>Difference</th>
+                    <th>Status</th>
+                    <th>Lines Covered</th>
+                  </tr>
+                </thead>
+                <tbody id="dashboardDeptRows"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Day-wise Present Trend</h3>
+                <p>Stacked department count for recent working days.</p>
+              </div>
+            </div>
+            <div class="stacked-chart" id="dashboardTrend"></div>
+            <div class="trend-legend" id="dashboardLegend"></div>
+          </section>
+
+          <section class="panel table-panel">
+            <div class="panel-head">
+              <div>
+                <h3>Manpower Allocation Target</h3>
+                <p>Update department target when monthly customer demand changes.</p>
+              </div>
+            </div>
+            <div class="target-form">
+              <select id="targetDeptSelect"></select>
+              <input id="targetValueInput" type="number" min="0" step="1" placeholder="Monthly target manpower">
+              <button class="primary-btn" id="saveTargetBtn" type="button">Save Target</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Department</th>
+                    <th>Target</th>
+                    <th>Current Present</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="targetRows"></tbody>
               </table>
             </div>
           </section>

@@ -408,6 +408,10 @@ video {
   margin-bottom: 14px;
 }
 
+.dashboard-metrics {
+  grid-template-columns: repeat(4, 1fr);
+}
+
 .metric {
   min-height: 100px;
   padding: 14px;
@@ -462,6 +466,7 @@ video {
 .status.present { background: #e8f6ed; color: var(--green); }
 .status.risk { background: #fee4e2; color: var(--red); }
 .status.duplicate { background: #fff4df; color: var(--amber); }
+.status.extra { background: #e6f3ff; color: #0b5c96; }
 
 .duplicate-row td {
   background: #fffbeb;
@@ -510,6 +515,90 @@ video {
 .absent-list {
   color: var(--ink);
   line-height: 1.5;
+}
+
+.compact-date {
+  min-width: 180px;
+}
+
+.target-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 240px) auto;
+  gap: 10px;
+  margin-bottom: 14px;
+  align-items: stretch;
+}
+
+.stacked-chart {
+  display: grid;
+  gap: 10px;
+}
+
+.stack-row {
+  display: grid;
+  grid-template-columns: 56px minmax(180px, 1fr) 44px;
+  gap: 10px;
+  align-items: center;
+}
+
+.stack-row span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.stack-row strong {
+  text-align: right;
+}
+
+.stack-track {
+  height: 24px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #edf3f5;
+  border: 1px solid var(--line);
+}
+
+.stack-fill {
+  height: 100%;
+  display: flex;
+  min-width: 2px;
+}
+
+.stack-fill i {
+  display: block;
+  height: 100%;
+}
+
+.trend-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 14px;
+}
+
+.trend-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.trend-legend i {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.stack-empty {
+  padding: 12px 14px;
+  color: var(--muted);
+  background: #f7fafb;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-weight: 700;
 }
 
 .table-panel {
@@ -715,7 +804,7 @@ tr:last-child td {
 
   .nav-tabs {
     grid-column: 1 / -1;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 6px;
   }
 
@@ -755,7 +844,7 @@ tr:last-child td {
     padding-inline: 18px;
   }
 
-  .toolbar, .history-toolbar, .master-toolbar, .scan-grid, .admin-grid, .operator-form, .login-create, .query-line {
+  .toolbar, .history-toolbar, .master-toolbar, .scan-grid, .admin-grid, .operator-form, .login-create, .query-line, .dashboard-metrics, .target-form {
     grid-template-columns: 1fr 1fr;
   }
 }
@@ -770,11 +859,11 @@ tr:last-child td {
     flex-direction: column;
   }
 
-  .toolbar, .history-toolbar, .master-toolbar, .scan-grid, .admin-grid, .operator-form, .login-create, .query-line, .metrics {
+  .toolbar, .history-toolbar, .master-toolbar, .scan-grid, .admin-grid, .operator-form, .login-create, .query-line, .metrics, .target-form {
     grid-template-columns: 1fr;
   }
 
-  .nav-tabs { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .nav-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
   .nav-tab {
     font-size: 12px;

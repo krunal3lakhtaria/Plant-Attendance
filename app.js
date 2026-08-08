@@ -51,6 +51,7 @@ const $ = (id) => document.getElementById(id);
 let today = localDate();
 
 $("attendanceDate").value = today;
+$("dashboardDate").value = today;
 $("historyToDate").value = today;
 $("historyFromDate").value = localDate(addDays(new Date(), -30));
 $("todayLabel").textContent = new Date().toLocaleDateString(undefined, {
@@ -87,6 +88,9 @@ function refreshToday() {
   if (!$("historyToDate").value || $("historyToDate").value < today) {
     $("historyToDate").value = today;
   }
+  if (!$("dashboardDate").value || $("dashboardDate").value < today) {
+    $("dashboardDate").value = today;
+  }
   return true;
 }
 
@@ -95,10 +99,23 @@ function normalizeState(parsed = {}) {
     operators: Array.isArray(parsed.operators) ? parsed.operators : [],
     attendance: Array.isArray(parsed.attendance) ? parsed.attendance : [],
     users: Array.isArray(parsed.users) ? parsed.users : defaultUsers,
+    deptTargets: normalizeDeptTargets(parsed.deptTargets),
     deletedAttendanceIds: Array.isArray(parsed.deletedAttendanceIds) ? parsed.deletedAttendanceIds : [],
     deletedUserIds: Array.isArray(parsed.deletedUserIds) ? parsed.deletedUserIds : [],
     deletedOperatorIds: Array.isArray(parsed.deletedOperatorIds) ? parsed.deletedOperatorIds : []
   };
+}
+
+function normalizeDeptTargets(value) {
+  const source = Array.isArray(value)
+    ? value
+    : Object.entries(value || {}).map(([department, target]) => ({ department, target }));
+  return source
+    .map((item) => ({
+      department: cleanScannedValue(item.department || item.dept || ""),
+      target: Math.max(Number.parseInt(item.target, 10) || 0, 0)
+    }))
+    .filter((item) => item.department);
 }
 
 function loadState() {
@@ -231,6 +248,7 @@ function mergeState(existing, incoming) {
       .filter((operator) => !deletedOperatorIds.has(String(operator.code).toLowerCase())),
     users: upsertBy(existing.users, incoming.users, (item) => item.id)
       .filter((user) => !deletedUserIds.has(user.id) || user.id === "admin"),
+    deptTargets: upsertBy(existing.deptTargets, incoming.deptTargets, (item) => item.department),
     attendance: upsertBy(existing.attendance, incoming.attendance, (item) => item.id)
       .filter((record) => !deletedAttendanceIds.has(record.id)),
     deletedAttendanceIds: [...deletedAttendanceIds],
@@ -343,6 +361,7 @@ function refreshFilters() {
     : unique(state.operators.map((op) => op.department));
   fillSelect($("departmentSelect"), departments);
   refreshHistoryFilters();
+  refreshTargetDepartmentSelect();
   refreshLines();
 }
 
@@ -384,6 +403,16 @@ function refreshHistoryLines(shouldRender = true) {
   );
   fillSelectWithAll($("historyLineSelect"), unique(records.map((record) => record.line)), "All Lines");
   if (shouldRender) renderAll();
+}
+
+function refreshTargetDepartmentSelect() {
+  fillSelect($("targetDeptSelect"), departmentNames());
+  updateTargetInput();
+}
+
+function updateTargetInput() {
+  const department = $("targetDeptSelect").value;
+  $("targetValueInput").value = department ? departmentTarget(department) || "" : "";
 }
 
 function parseCardText(text) {
@@ -922,6 +951,74 @@ function adminDailyRecords() {
   return scopedAttendance().filter((record) => record.date === date);
 }
 
+function dashboardRecords(date = $("dashboardDate").value || today) {
+  return scopedAttendance().filter((record) => record.date === date);
+}
+
+function departmentNames() {
+  return unique([
+    ...state.operators.map((operator) => operator.department),
+    ...state.attendance.map((record) => record.department),
+    ...state.deptTargets.map((target) => target.department)
+  ]);
+}
+
+function departmentTarget(department) {
+  return state.deptTargets.find((target) => target.department === department)?.target || 0;
+}
+
+function setDepartmentTarget(department, target) {
+  const cleanDepartment = cleanScannedValue(department);
+  const cleanTarget = Math.max(Number.parseInt(target, 10) || 0, 0);
+  if (!cleanDepartment) return;
+  state.deptTargets = state.deptTargets.filter((item) => item.department !== cleanDepartment);
+  state.deptTargets.push({ department: cleanDepartment, target: cleanTarget });
+  state.deptTargets.sort((a, b) => a.department.localeCompare(b.department));
+}
+
+function departmentDashboardRows(date = $("dashboardDate").value || today) {
+  const counted = countedRecords(dashboardRecords(date));
+  const departments = departmentNames();
+  return departments.map((department) => {
+    const deptRecords = counted.filter((record) => record.department === department);
+    const lines = new Set(deptRecords.map((record) => record.line));
+    const present = deptRecords.length;
+    const target = departmentTarget(department);
+    const difference = present - target;
+    return {
+      department,
+      present,
+      target,
+      difference,
+      lines: lines.size,
+      status: target === 0
+        ? "No target"
+        : difference < 0
+          ? "Low"
+          : difference > 0
+            ? "Extra"
+            : "Sufficient"
+    };
+  });
+}
+
+function statusClass(status) {
+  if (status === "Low") return "risk";
+  if (status === "Extra") return "extra";
+  if (status === "Sufficient") return "present";
+  return "pending";
+}
+
+function trendDates(endDate, days = 14) {
+  const end = new Date(`${endDate || today}T00:00:00`);
+  return Array.from({ length: days }, (_, index) => localDate(addDays(end, index - days + 1)));
+}
+
+function colorForIndex(index) {
+  const colors = ["#116a7b", "#18a999", "#f5b400", "#6c5ce7", "#e85d75", "#2d9cdb", "#8bc34a", "#ff8a3d"];
+  return colors[index % colors.length];
+}
+
 function lineSessionsFor(operator, shift = "all") {
   const sessions = new Set();
   state.attendance.forEach((record) => {
@@ -1042,6 +1139,83 @@ function renderAdmin() {
       </tr>
     `;
   }).join("") || `<tr><td colspan="8">No compiled data yet.</td></tr>`;
+}
+
+function renderDashboard() {
+  const date = $("dashboardDate").value || today;
+  const rows = departmentDashboardRows(date);
+  const presentTotal = rows.reduce((sum, row) => sum + row.present, 0);
+  const targetTotal = rows.reduce((sum, row) => sum + row.target, 0);
+  const lowTotal = rows.reduce((sum, row) => sum + Math.max(row.target - row.present, 0), 0);
+  const extraTotal = rows.reduce((sum, row) => sum + Math.max(row.present - row.target, 0), 0);
+
+  $("dashboardPresent").textContent = presentTotal;
+  $("dashboardTarget").textContent = targetTotal;
+  $("dashboardLow").textContent = lowTotal;
+  $("dashboardExtra").textContent = extraTotal;
+
+  $("dashboardDeptRows").innerHTML = rows.map((row) => `
+    <tr>
+      <td>${escapeHtml(row.department)}</td>
+      <td>${row.present}</td>
+      <td>${row.target || "Not set"}</td>
+      <td>${row.target ? row.difference : "-"}</td>
+      <td><span class="status ${statusClass(row.status)}">${escapeHtml(row.status)}</span></td>
+      <td>${row.lines}</td>
+    </tr>
+  `).join("") || `<tr><td colspan="6">No department data available.</td></tr>`;
+
+  renderTargetRows(rows);
+  renderDashboardTrend(date);
+}
+
+function renderTargetRows(rows = departmentDashboardRows()) {
+  $("targetRows").innerHTML = rows.map((row) => `
+    <tr>
+      <td>${escapeHtml(row.department)}</td>
+      <td>${row.target || "Not set"}</td>
+      <td>${row.present}</td>
+      <td><span class="status ${statusClass(row.status)}">${escapeHtml(row.status)}</span></td>
+    </tr>
+  `).join("") || `<tr><td colspan="4">No departments available for target setup.</td></tr>`;
+}
+
+function renderDashboardTrend(endDate = $("dashboardDate").value || today) {
+  const departments = departmentNames();
+  const dates = trendDates(endDate);
+  const dayRows = dates.map((date) => {
+    const counted = countedRecords(dashboardRecords(date));
+    const counts = Object.fromEntries(departments.map((department) => [department, 0]));
+    counted.forEach((record) => {
+      counts[record.department] = (counts[record.department] || 0) + 1;
+    });
+    return {
+      date,
+      counts,
+      total: Object.values(counts).reduce((sum, count) => sum + count, 0)
+    };
+  });
+  const max = Math.max(...dayRows.map((row) => row.total), 1);
+
+  $("dashboardTrend").innerHTML = dayRows.map((row) => `
+    <div class="stack-row">
+      <span>${escapeHtml(row.date.slice(5))}</span>
+      <div class="stack-track" title="${escapeHtml(`${row.date}: ${row.total}`)}">
+        <div class="stack-fill" style="width:${(row.total / max) * 100}%">
+          ${departments.map((department, index) => {
+            const count = row.counts[department] || 0;
+            const width = row.total ? (count / row.total) * 100 : 0;
+            return count ? `<i style="width:${width}%;background:${colorForIndex(index)}" title="${escapeHtml(`${department}: ${count}`)}"></i>` : "";
+          }).join("")}
+        </div>
+      </div>
+      <strong>${row.total}</strong>
+    </div>
+  `).join("") || `<div class="stack-empty">No trend data available.</div>`;
+
+  $("dashboardLegend").innerHTML = departments.map((department, index) => `
+    <span><i style="background:${colorForIndex(index)}"></i>${escapeHtml(department)}</span>
+  `).join("");
 }
 
 function renderBlacklist() {
@@ -1179,6 +1353,7 @@ function canSaveUserChange(previousUser, nextUser) {
 function renderAll() {
   renderAttendance();
   renderAdmin();
+  renderDashboard();
   renderHistory();
   renderBlacklist();
   renderMaster();
@@ -1532,6 +1707,20 @@ function closeOptionsMenu() {
 $("departmentSelect").addEventListener("change", refreshLines);
 ["lineSelect", "shiftSelect", "attendanceDate"].forEach((id) => {
   $(id).addEventListener("change", renderAll);
+});
+$("dashboardDate").addEventListener("change", renderAll);
+$("targetDeptSelect").addEventListener("change", updateTargetInput);
+$("saveTargetBtn").addEventListener("click", () => {
+  const department = $("targetDeptSelect").value;
+  if (!department) {
+    showToast("Select department for target.");
+    return;
+  }
+  setDepartmentTarget(department, $("targetValueInput").value);
+  saveState();
+  refreshTargetDepartmentSelect();
+  renderAll();
+  showToast("Department target saved.");
 });
 
 $("scanInput").addEventListener("keydown", (event) => {
