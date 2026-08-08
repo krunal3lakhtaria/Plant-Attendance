@@ -1209,7 +1209,7 @@ function renderDashboard() {
 
   renderDashboardPie(rows, presentTotal);
 
-  const cards = presentTotal ? [allRow, ...rows] : rows;
+  const cards = rows.length ? [allRow, ...rows] : [];
   $("dashboardDeptCards").innerHTML = cards.map((row, index) => {
     const targetPercent = row.target ? Math.min(Math.round((row.present / row.target) * 100), 160) : 0;
     const barWidth = row.target ? Math.min(targetPercent, 100) : row.present ? 100 : 0;
@@ -1226,7 +1226,7 @@ function renderDashboard() {
         </span>
         <span class="dept-progress"><i style="width:${barWidth}%"></i></span>
         <span class="dept-footer">
-          <small>${row.lines} lines</small>
+          <small>${isAll ? `${row.departments} departments` : "department total"}</small>
           <small>${row.target ? `${row.difference >= 0 ? "+" : ""}${row.difference}` : "set target"}</small>
         </span>
       </button>
@@ -1241,18 +1241,21 @@ function allDepartmentsDashboardRow(rows = departmentDashboardRows()) {
   const present = rows.reduce((sum, row) => sum + row.present, 0);
   const target = rows.reduce((sum, row) => sum + row.target, 0);
   const difference = present - target;
-  const lines = new Set(
-    countedRecords(dashboardRecords($("dashboardDate").value || today))
-      .map((record) => `${reportingDepartment(record)}::${record.line}`)
-  ).size;
   return {
     key: ALL_DEPARTMENTS_KEY,
-    department: "All Departments HC",
+    department: "All Departments",
     present,
     target,
     difference,
-    lines,
-    status: "Line-wise"
+    departments: rows.length,
+    lines: rows.length,
+    status: target === 0
+      ? "No target"
+      : difference < 0
+        ? "Low"
+        : difference > 0
+          ? "Extra"
+          : "Sufficient"
   };
 }
 
@@ -1305,15 +1308,14 @@ function renderDashboardDetail(row) {
 
   const date = $("dashboardDate").value || today;
   const isAllDepartments = row.key === ALL_DEPARTMENTS_KEY;
-  const records = countedRecords(dashboardRecords(date))
-    .filter((record) => isAllDepartments || reportingDepartment(record) === row.department);
+  const detailRows = isAllDepartments ? departmentDashboardRows(date) : [row];
   const ringPercent = row.target ? Math.min(Math.round((row.present / row.target) * 100), 160) : 0;
   const ringDisplay = row.target ? `${Math.min(ringPercent, 999)}%` : "--";
 
   $("dashboardDetailTitle").textContent = row.department;
   $("dashboardDetailMeta").textContent = isAllDepartments
-    ? `${date} · ${row.present} present HC · ${row.lines} department-line groups`
-    : `${date} · ${row.present} present · ${row.target || "target not set"} target`;
+    ? `${date} · ${row.present} present HC · ${detailRows.length} departments`
+    : `${date} · ${row.present} present HC · ${row.target || "target not set"} target`;
   $("dashboardDetailStatus").textContent = row.status;
   $("dashboardDetailStatus").className = `status ${statusClass(row.status)}`;
   $("dashboardTargetRing").style.setProperty("--ring", `${Math.min(ringPercent, 100) * 3.6}deg`);
@@ -1324,28 +1326,23 @@ function renderDashboardDetail(row) {
     <div><span>Present</span><strong>${row.present}</strong></div>
     <div><span>Target</span><strong>${row.target || "Not set"}</strong></div>
     <div><span>Difference</span><strong>${row.target ? `${row.difference >= 0 ? "+" : ""}${row.difference}` : "-"}</strong></div>
-    <div><span>Lines</span><strong>${row.lines}</strong></div>
+    <div><span>${isAllDepartments ? "Departments" : "Department"}</span><strong>${isAllDepartments ? detailRows.length : "Total"}</strong></div>
   `;
 
-  const groups = new Map();
-  records.forEach((record) => {
-    const key = `${reportingDepartment(record)}::${record.line}::${record.shift}`;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(record);
-  });
-
-  $("dashboardDetailRows").innerHTML = [...groups.entries()]
-  .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
-  .map(([key, groupRecords]) => {
-    const [department, line, shift] = key.split("::");
-    const names = groupRecords.map((record) => record.name).join(", ");
+  $("dashboardDetailRows").innerHTML = detailRows
+  .sort((a, b) => b.present - a.present || a.department.localeCompare(b.department))
+  .map((departmentRow) => {
+    const targetText = departmentRow.target || "Not set";
+    const differenceText = departmentRow.target
+      ? `${departmentRow.difference >= 0 ? "+" : ""}${departmentRow.difference}`
+      : "-";
     return `
       <tr>
-        <td>${escapeHtml(department)}</td>
-        <td>${escapeHtml(line)}</td>
-        <td>${escapeHtml(shift)}</td>
-        <td>${groupRecords.length}</td>
-        <td>${escapeHtml(names)}</td>
+        <td>${escapeHtml(departmentRow.department)}</td>
+        <td>${departmentRow.present}</td>
+        <td>${targetText}</td>
+        <td>${differenceText}</td>
+        <td><span class="status ${statusClass(departmentRow.status)}">${escapeHtml(departmentRow.status)}</span></td>
       </tr>
     `;
   }).join("") || `<tr><td colspan="5">No attendance for this selection on selected date.</td></tr>`;
