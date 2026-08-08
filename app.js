@@ -48,7 +48,7 @@ let lastScanAt = 0;
 let editingUserId = "";
 
 const $ = (id) => document.getElementById(id);
-const today = localDate();
+let today = localDate();
 
 $("attendanceDate").value = today;
 $("historyToDate").value = today;
@@ -69,6 +69,25 @@ function addDays(date, days) {
   const copy = new Date(date);
   copy.setDate(copy.getDate() + days);
   return copy;
+}
+
+function refreshToday() {
+  const liveToday = localDate();
+  if (liveToday === today) return false;
+  today = liveToday;
+  $("todayLabel").textContent = new Date().toLocaleDateString(undefined, {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric"
+  });
+  if (!$("attendanceDate").value || $("attendanceDate").value < today) {
+    $("attendanceDate").value = today;
+  }
+  if (!$("historyToDate").value || $("historyToDate").value < today) {
+    $("historyToDate").value = today;
+  }
+  return true;
 }
 
 function normalizeState(parsed = {}) {
@@ -889,13 +908,18 @@ function renderAttendance() {
 
 function attendanceGroups() {
   const groups = new Map();
-  scopedAttendance().forEach((record) => {
+  adminDailyRecords().forEach((record) => {
     const key = groupKey(record);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(record);
   });
   return [...groups.entries()].map(([key, records]) => ({ key, records, first: records[0] }))
     .sort((a, b) => a.key.localeCompare(b.key));
+}
+
+function adminDailyRecords() {
+  const date = $("attendanceDate").value || today;
+  return scopedAttendance().filter((record) => record.date === date);
 }
 
 function lineSessionsFor(operator, shift = "all") {
@@ -980,7 +1004,7 @@ function renderQueryResult(operatorCode = $("queryInput").value.trim()) {
 }
 
 function renderAdmin() {
-  const records = scopedAttendance();
+  const records = adminDailyRecords();
   const counted = countedRecords(records);
   const groups = attendanceGroups();
   $("adminTotal").textContent = counted.length;
@@ -1715,16 +1739,23 @@ $("userRows").addEventListener("click", (event) => {
 });
 
 window.addEventListener("online", () => {
+  if (refreshToday()) renderAll();
   if (pendingSync) loadServerState();
 });
 
 window.addEventListener("focus", () => {
+  if (refreshToday()) renderAll();
   if (pendingSync) loadServerState();
 });
 
 document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && refreshToday()) renderAll();
   if (!document.hidden && pendingSync) loadServerState();
 });
+
+setInterval(() => {
+  if (refreshToday()) renderAll();
+}, 60_000);
 
 refreshFilters();
 applyLoginState();
