@@ -4,6 +4,7 @@ const SYNC_PENDING_KEY = "plant-attendance-sync-pending";
 const PRODUCTION_ORIGIN = "https://backend-krunal3lakhtaria-3113s-projects.vercel.app";
 const API_BASE = location.protocol === "file:" ? PRODUCTION_ORIGIN : "";
 const ASSEMBLY_DEPARTMENT = "Assembly";
+const ALL_DEPARTMENTS_KEY = "__all_departments__";
 
 const sampleOperators = [
   ["303408", "Sample Operator", "F/A", "Production", "Assembly-K2", "14-07-2025", "Level 4", "23-04-2026", "22-07-2026"],
@@ -420,6 +421,10 @@ function refreshTargetDepartmentSelect() {
 }
 
 function updateTargetInput() {
+  if (selectedDashboardDept === ALL_DEPARTMENTS_KEY) {
+    $("targetValueInput").value = "";
+    return;
+  }
   const department = $("targetDeptSelect").value;
   $("targetValueInput").value = department ? departmentTarget(department) || "" : "";
 }
@@ -1036,7 +1041,7 @@ function departmentDashboardRows(date = $("dashboardDate").value || today) {
 function statusClass(status) {
   if (status === "Low") return "risk";
   if (status === "Extra") return "extra";
-  if (status === "Sufficient") return "present";
+  if (status === "Sufficient" || status === "Line-wise") return "present";
   return "pending";
 }
 
@@ -1184,7 +1189,12 @@ function renderDashboard() {
   const targetTotal = rows.reduce((sum, row) => sum + row.target, 0);
   const lowTotal = rows.reduce((sum, row) => sum + Math.max(row.target - row.present, 0), 0);
   const extraTotal = rows.reduce((sum, row) => sum + Math.max(row.present - row.target, 0), 0);
-  const selected = rows.find((row) => row.department === selectedDashboardDept) || rows[0] || null;
+  const allRow = allDepartmentsDashboardRow(rows);
+  const selected = !selectedDashboardDept
+    ? allRow
+    : selectedDashboardDept === ALL_DEPARTMENTS_KEY
+    ? allRow
+    : rows.find((row) => row.department === selectedDashboardDept) || rows[0] || allRow;
 
   $("dashboardPresent").textContent = presentTotal;
   $("dashboardTarget").textContent = targetTotal;
@@ -1193,17 +1203,19 @@ function renderDashboard() {
   $("dashboardDeptCount").textContent = `${rows.length} Dept.`;
   $("dashboardMixLabel").textContent = date === today ? "Today" : date;
 
-  if (selected && selected.department !== selectedDashboardDept) {
-    selectedDashboardDept = selected.department;
+  if (selected && selected.key !== selectedDashboardDept && selected.department !== selectedDashboardDept) {
+    selectedDashboardDept = selected.key || selected.department;
   }
 
   renderDashboardPie(rows, presentTotal);
 
-  $("dashboardDeptCards").innerHTML = rows.map((row, index) => {
+  const cards = presentTotal ? [allRow, ...rows] : rows;
+  $("dashboardDeptCards").innerHTML = cards.map((row, index) => {
     const targetPercent = row.target ? Math.min(Math.round((row.present / row.target) * 100), 160) : 0;
     const barWidth = row.target ? Math.min(targetPercent, 100) : row.present ? 100 : 0;
+    const isAll = row.key === ALL_DEPARTMENTS_KEY;
     return `
-      <button class="dept-card ${row.department === selectedDashboardDept ? "active" : ""}" type="button" data-dashboard-dept="${escapeHtml(row.department)}" style="--accent:${colorForIndex(index)}">
+      <button class="dept-card ${isAll ? "all-dept-card" : ""} ${row.department === selectedDashboardDept || row.key === selectedDashboardDept ? "active" : ""}" type="button" data-dashboard-dept="${escapeHtml(row.key || row.department)}" style="--accent:${isAll ? "#10272d" : colorForIndex(index - (presentTotal ? 1 : 0))}">
         <span class="dept-topline">
           <strong>${escapeHtml(row.department)}</strong>
           <em class="status ${statusClass(row.status)}">${escapeHtml(row.status)}</em>
@@ -1223,6 +1235,25 @@ function renderDashboard() {
 
   renderDashboardDetail(selected);
   renderDashboardTrend(date);
+}
+
+function allDepartmentsDashboardRow(rows = departmentDashboardRows()) {
+  const present = rows.reduce((sum, row) => sum + row.present, 0);
+  const target = rows.reduce((sum, row) => sum + row.target, 0);
+  const difference = present - target;
+  const lines = new Set(
+    countedRecords(dashboardRecords($("dashboardDate").value || today))
+      .map((record) => `${reportingDepartment(record)}::${record.line}`)
+  ).size;
+  return {
+    key: ALL_DEPARTMENTS_KEY,
+    department: "All Departments HC",
+    present,
+    target,
+    difference,
+    lines,
+    status: "Line-wise"
+  };
 }
 
 function renderDashboardPie(rows, presentTotal) {
@@ -1268,22 +1299,27 @@ function renderDashboardDetail(row) {
     $("dashboardDetailStatus").className = "status pending";
     $("dashboardTargetRing").innerHTML = `<strong>0%</strong><span>target</span>`;
     $("dashboardInsight").innerHTML = "";
-    $("dashboardDetailRows").innerHTML = `<tr><td colspan="4">No details available.</td></tr>`;
+    $("dashboardDetailRows").innerHTML = `<tr><td colspan="5">No details available.</td></tr>`;
     return;
   }
 
   const date = $("dashboardDate").value || today;
+  const isAllDepartments = row.key === ALL_DEPARTMENTS_KEY;
   const records = countedRecords(dashboardRecords(date))
-    .filter((record) => reportingDepartment(record) === row.department);
+    .filter((record) => isAllDepartments || reportingDepartment(record) === row.department);
   const ringPercent = row.target ? Math.min(Math.round((row.present / row.target) * 100), 160) : 0;
   const ringDisplay = row.target ? `${Math.min(ringPercent, 999)}%` : "--";
 
   $("dashboardDetailTitle").textContent = row.department;
-  $("dashboardDetailMeta").textContent = `${date} · ${row.present} present · ${row.target || "target not set"} target`;
+  $("dashboardDetailMeta").textContent = isAllDepartments
+    ? `${date} · ${row.present} present HC · ${row.lines} department-line groups`
+    : `${date} · ${row.present} present · ${row.target || "target not set"} target`;
   $("dashboardDetailStatus").textContent = row.status;
   $("dashboardDetailStatus").className = `status ${statusClass(row.status)}`;
   $("dashboardTargetRing").style.setProperty("--ring", `${Math.min(ringPercent, 100) * 3.6}deg`);
-  $("dashboardTargetRing").innerHTML = `<strong>${ringDisplay}</strong><span>target</span>`;
+  $("dashboardTargetRing").innerHTML = isAllDepartments
+    ? `<strong>${row.present}</strong><span>present HC</span>`
+    : `<strong>${ringDisplay}</strong><span>target</span>`;
   $("dashboardInsight").innerHTML = `
     <div><span>Present</span><strong>${row.present}</strong></div>
     <div><span>Target</span><strong>${row.target || "Not set"}</strong></div>
@@ -1293,23 +1329,26 @@ function renderDashboardDetail(row) {
 
   const groups = new Map();
   records.forEach((record) => {
-    const key = `${record.line}::${record.shift}`;
+    const key = `${reportingDepartment(record)}::${record.line}::${record.shift}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(record);
   });
 
-  $("dashboardDetailRows").innerHTML = [...groups.entries()].map(([key, groupRecords]) => {
-    const [line, shift] = key.split("::");
+  $("dashboardDetailRows").innerHTML = [...groups.entries()]
+  .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+  .map(([key, groupRecords]) => {
+    const [department, line, shift] = key.split("::");
     const names = groupRecords.map((record) => record.name).join(", ");
     return `
       <tr>
+        <td>${escapeHtml(department)}</td>
         <td>${escapeHtml(line)}</td>
         <td>${escapeHtml(shift)}</td>
         <td>${groupRecords.length}</td>
         <td>${escapeHtml(names)}</td>
       </tr>
     `;
-  }).join("") || `<tr><td colspan="4">No attendance for this department on selected date.</td></tr>`;
+  }).join("") || `<tr><td colspan="5">No attendance for this selection on selected date.</td></tr>`;
 }
 
 function renderDashboardTrend(endDate = $("dashboardDate").value || today) {
@@ -1864,7 +1903,9 @@ $("dashboardDeptCards").addEventListener("click", (event) => {
   const card = event.target.closest("[data-dashboard-dept]");
   if (!card) return;
   selectedDashboardDept = card.dataset.dashboardDept;
-  $("targetDeptSelect").value = selectedDashboardDept;
+  if (selectedDashboardDept !== ALL_DEPARTMENTS_KEY) {
+    $("targetDeptSelect").value = selectedDashboardDept;
+  }
   updateTargetInput();
   renderDashboard();
 });
@@ -1877,11 +1918,7 @@ $("dashboardPieLegend").addEventListener("click", (event) => {
   renderDashboard();
 });
 $("dashboardPie").addEventListener("click", () => {
-  const rows = departmentDashboardRows();
-  const topRow = rows.find((row) => row.present > 0) || rows[0];
-  if (!topRow) return;
-  selectedDashboardDept = topRow.department;
-  $("targetDeptSelect").value = selectedDashboardDept;
+  selectedDashboardDept = ALL_DEPARTMENTS_KEY;
   updateTargetInput();
   renderDashboard();
 });
@@ -1895,14 +1932,18 @@ document.querySelectorAll("[data-kpi]").forEach((button) => {
   button.addEventListener("click", () => {
     const rows = departmentDashboardRows();
     const mode = button.dataset.kpi;
-    const targetRow = mode === "low"
+    const targetRow = mode === "present"
+      ? allDepartmentsDashboardRow(rows)
+      : mode === "low"
       ? rows.find((row) => row.status === "Low")
       : mode === "extra"
         ? rows.find((row) => row.status === "Extra")
-        : rows.sort((a, b) => b.present - a.present)[0];
+        : allDepartmentsDashboardRow(rows);
     if (!targetRow) return;
-    selectedDashboardDept = targetRow.department;
-    $("targetDeptSelect").value = selectedDashboardDept;
+    selectedDashboardDept = targetRow.key || targetRow.department;
+    if (selectedDashboardDept !== ALL_DEPARTMENTS_KEY) {
+      $("targetDeptSelect").value = selectedDashboardDept;
+    }
     updateTargetInput();
     renderDashboard();
   });

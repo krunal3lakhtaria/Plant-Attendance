@@ -663,6 +663,26 @@ video {
   border-color: rgba(17, 106, 123, .34);
 }
 
+.all-dept-card {
+  color: #ffffff;
+  background:
+    linear-gradient(135deg, #10272d 0%, #116a7b 58%, #18a999 100%);
+  border-color: rgba(255, 255, 255, .22);
+}
+
+.all-dept-card .dept-numbers small,
+.all-dept-card .dept-footer small {
+  color: rgba(255, 255, 255, .78);
+}
+
+.all-dept-card .dept-progress {
+  background: rgba(255, 255, 255, .22);
+}
+
+.all-dept-card .dept-progress i {
+  background: #f5b400;
+}
+
 .dept-topline, .dept-footer, .dept-numbers {
   display: flex;
   align-items: center;
@@ -850,7 +870,7 @@ video {
 }
 
 .compact-table table {
-  min-width: 620px;
+  min-width: 760px;
 }
 
 .stacked-chart {
